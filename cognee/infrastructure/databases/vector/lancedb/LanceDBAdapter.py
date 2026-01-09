@@ -65,7 +65,20 @@ class LanceDBAdapter(VectorDBInterface):
             - lancedb.AsyncConnection: An active connection to the LanceDB.
         """
         if self.connection is None:
-            self.connection = await lancedb.connect_async(self.url, api_key=self.api_key)
+            # Configure storage options for temporary directory
+            import os
+            storage_options = {}
+            
+            # Check if LANCE_TEMP_DIR environment variable is set
+            lance_temp_dir = os.getenv('LANCE_TEMP_DIR')
+            if lance_temp_dir:
+                storage_options['temp_dir'] = lance_temp_dir
+            
+            self.connection = await lancedb.connect_async(
+                self.url, 
+                api_key=self.api_key,
+                storage_options=storage_options if storage_options else None
+            )
 
         return self.connection
 
@@ -106,6 +119,38 @@ class LanceDBAdapter(VectorDBInterface):
         connection = await self.get_connection()
         collection_names = await connection.table_names()
         return collection_name in collection_names
+
+    async def list_collections(self) -> list[str]:
+        """
+        Returns a list of all collection names in the LanceDB.
+
+        Returns:
+        --------
+
+            - list[str]: A list of collection (table) names.
+        """
+        connection = await self.get_connection()
+        return await connection.table_names()
+
+    async def get_collection_size(self, collection_name: str) -> int:
+        """
+        Returns the number of vectors in the specified collection.
+
+        Parameters:
+        -----------
+
+            - collection_name (str): The name of the collection.
+
+        Returns:
+        --------
+
+            - int: The number of vectors in the collection.
+        """
+        if not await self.has_collection(collection_name):
+            return 0
+        
+        collection = await self.get_collection(collection_name)
+        return await collection.count_rows()
 
     async def create_collection(self, collection_name: str, payload_schema: BaseModel):
         vector_size = self.embedding_engine.get_vector_size()
@@ -200,6 +245,24 @@ class LanceDBAdapter(VectorDBInterface):
                 .when_not_matched_insert_all()
                 .execute(lance_data_points)
             )
+        
+        # 验证向量写入成功
+        from cognee.shared.logging_utils import get_logger
+        logger = get_logger()
+        
+        logger.info(f"Attempting to add {len(data_points)} vectors to collection '{collection_name}'")
+        
+        try:
+            # 查询实际写入的向量数量
+            actual_count = await collection.count_rows()
+            logger.info(f"Collection '{collection_name}' now contains {actual_count} vectors after write operation")
+            
+            if actual_count == 0:
+                logger.error(f"Vector write verification failed: Expected to add {len(data_points)} vectors to '{collection_name}' but collection is empty")
+                logger.error(f"Sample data point ID: {data_points[0].id if data_points else 'N/A'}")
+                logger.error(f"Sample data point type: {type(data_points[0]).__name__ if data_points else 'N/A'}")
+        except Exception as verify_error:
+            logger.warning(f"Could not verify vector count after write: {verify_error}")
 
     async def retrieve(self, collection_name: str, data_point_ids: list[str]):
         collection = await self.get_collection(collection_name)

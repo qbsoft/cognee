@@ -10,6 +10,9 @@ from cognee.modules.graph.exceptions import (
 from cognee.infrastructure.databases.graph.graph_db_interface import GraphDBInterface
 from cognee.modules.graph.cognee_graph.CogneeGraphElements import Node, Edge
 from cognee.modules.graph.cognee_graph.CogneeAbstractGraph import CogneeAbstractGraph
+from cognee.modules.retrieval.utils.result_quality_scorer import (
+    rank_results_by_quality,
+)
 import heapq
 
 logger = get_logger("CogneeGraph")
@@ -180,11 +183,127 @@ class CogneeGraph(CogneeAbstractGraph):
             logger.error(f"Error mapping vector distances to edges: {str(ex)}")
             raise ex
 
-    async def calculate_top_triplet_importances(self, k: int) -> List[Edge]:
+    async def calculate_top_triplet_importances(
+        self, k: int, similarity_threshold: float = 0.5, query: Optional[str] = None,
+        dynamic_threshold: bool = True
+    ) -> List[Edge]:
+        """
+        计算并返回最重要的 top-k 个三元组。
+        
+        Args:
+            k: 返回的三元组数量
+            similarity_threshold: 相似度阈值（归一化后的距离），用于过滤相关边。
+                由于 lower is better，阈值应该是一个值（如 0.3-0.7）。
+                默认值为 0.5，表示更严格地过滤相关性较低的节点。
+                过滤逻辑：
+                - 如果两个节点都低于阈值，保留该边
+                - 如果至少一个节点非常相关（< 0.3），且另一个节点中等相关（< 0.7），保留该边
+                - 否则过滤掉
+            query: 查询文本（可选），如果提供，将使用质量评分进行排序
+            dynamic_threshold: 是否使用动态阈值调整（默认True）
+        
+        Returns:
+            最重要的 top-k 个三元组列表
+        """
         def score(edge):
-            n1 = edge.node1.attributes.get("vector_distance", 1)
-            n2 = edge.node2.attributes.get("vector_distance", 1)
-            e = edge.attributes.get("vector_distance", 1)
+            n1 = edge.node1.attributes.get("vector_distance", float("inf"))
+            n2 = edge.node2.attributes.get("vector_distance", float("inf"))
+            e = edge.attributes.get("vector_distance", float("inf"))
             return n1 + n2 + e
-
-        return heapq.nsmallest(k, self.edges, key=score)
+        
+        # 动态阈值调整：根据结果数量调整阈值
+        adjusted_threshold = similarity_threshold
+        if dynamic_threshold:
+            # 先进行一次初步过滤，看看有多少结果
+            preliminary_relevant = [
+                edge for edge in self.edges
+                if edge.node1.attributes.get("type", "") != "NodeSet" and
+                   edge.node2.attributes.get("type", "") != "NodeSet" and
+                   (edge.node1.attributes.get("vector_distance", float("inf")) != float("inf") or
+                    edge.node2.attributes.get("vector_distance", float("inf")) != float("inf"))
+            ]
+            
+            # 如果初步结果太少，放宽阈值
+            if len(preliminary_relevant) < k * 2:
+                adjusted_threshold = min(similarity_threshold + 0.1, 0.7)
+                logger.debug(f"动态调整阈值: {similarity_threshold} -> {adjusted_threshold} (结果数: {len(preliminary_relevant)})")
+            # 如果初步结果太多，收紧阈值
+            elif len(preliminary_relevant) > k * 10:
+                adjusted_threshold = max(similarity_threshold - 0.1, 0.3)
+                logger.debug(f"动态调整阈值: {similarity_threshold} -> {adjusted_threshold} (结果数: {len(preliminary_relevant)})")
+        
+        def is_relevant(edge):
+            """
+            检查边是否与查询相关。
+            改进的过滤逻辑：
+            1. 过滤掉系统节点（NodeSet 类型）
+            2. 两个节点都低于阈值（严格相关）
+            3. 或者至少一个节点非常相关（< 0.3），且另一个节点也相关（< 阈值）
+            """
+            # 过滤掉系统节点（NodeSet 类型）
+            n1_type = edge.node1.attributes.get("type", "")
+            n2_type = edge.node2.attributes.get("type", "")
+            if n1_type == "NodeSet" or n2_type == "NodeSet":
+                return False
+            
+            n1_dist = edge.node1.attributes.get("vector_distance", float("inf"))
+            n2_dist = edge.node2.attributes.get("vector_distance", float("inf"))
+            
+            # 处理 None 值，将其视为 inf
+            if n1_dist is None:
+                n1_dist = float("inf")
+            if n2_dist is None:
+                n2_dist = float("inf")
+            
+            # 如果两个节点都没有有效的 vector_distance，过滤掉
+            if n1_dist == float("inf") and n2_dist == float("inf"):
+                return False
+            
+            # 使用调整后的阈值
+            threshold = adjusted_threshold
+            
+            # 情况1：两个节点都低于阈值（严格相关）
+            both_relevant = (
+                n1_dist != float("inf") and n1_dist < threshold and
+                n2_dist != float("inf") and n2_dist < threshold
+            )
+            
+            # 情况2：至少一个节点非常相关（< 0.3），且另一个节点也相关（< 阈值）
+            # 这样更严格，避免包含过多低相关节点
+            one_highly_relevant = (
+                (n1_dist != float("inf") and n1_dist < 0.3 and 
+                 n2_dist != float("inf") and n2_dist < threshold) or
+                (n2_dist != float("inf") and n2_dist < 0.3 and 
+                 n1_dist != float("inf") and n1_dist < threshold)
+            )
+            
+            return both_relevant or one_highly_relevant
+        
+        # 先过滤掉不相关的边（至少一个节点必须有有效的 vector_distance 且低于阈值）
+        relevant_edges = [edge for edge in self.edges if is_relevant(edge)]
+        
+        if not relevant_edges:
+            logger.warning(
+                f"No relevant edges found with similarity threshold {similarity_threshold}. "
+                "This may indicate that the query is not related to any nodes in the graph."
+            )
+            return []
+        
+        logger.info(
+            f"Filtered {len(self.edges)} edges to {len(relevant_edges)} relevant edges "
+            f"(threshold: {similarity_threshold}), selecting top {k}"
+        )
+        
+        # 如果提供了查询文本，使用质量评分进行排序
+        if query and relevant_edges:
+            try:
+                scored_results = rank_results_by_quality(relevant_edges, query)
+                # 返回前k个最高质量的结果
+                return [edge for edge, _ in scored_results[:k]]
+            except Exception as e:
+                logger.warning(f"质量评分失败，使用默认排序: {str(e)}")
+                # 如果质量评分失败，回退到默认排序
+                return heapq.nsmallest(k, relevant_edges, key=score)
+        
+        # 然后选择 top-k（使用最小堆，因为 lower score is better）
+        return heapq.nsmallest(k, relevant_edges, key=score)

@@ -108,9 +108,12 @@ def get_cognify_router() -> APIRouter:
             )
 
         from cognee.api.v1.cognify import cognify as cognee_cognify
+        from traceback import format_exc
 
         try:
             datasets = payload.dataset_ids if payload.dataset_ids else payload.datasets
+
+            logger.info(f"Starting cognify for user {user.id}, datasets: {datasets}")
 
             cognify_run = await cognee_cognify(
                 datasets,
@@ -121,33 +124,47 @@ def get_cognify_router() -> APIRouter:
 
             # If any cognify run errored return JSONResponse with proper error status code
             if any(isinstance(v, PipelineRunErrored) for v in cognify_run.values()):
+                logger.warning(f"Cognify run errored for user {user.id}: {cognify_run}")
                 return JSONResponse(status_code=420, content=jsonable_encoder(cognify_run))
+            
+            logger.info(f"Cognify completed successfully for user {user.id}")
             return cognify_run
         except Exception as error:
-            return JSONResponse(status_code=409, content={"error": str(error)})
+            # Log the full exception traceback for debugging
+            logger.error(f"Cognify failed for user {user.id}: {str(error)}\n{format_exc()}")
+            return JSONResponse(
+                status_code=500, 
+                content={
+                    "error": str(error),
+                    "message": "An internal server error occurred during cognify processing. Please check the server logs for details."
+                }
+            )
 
     @router.websocket("/subscribe/{pipeline_run_id}")
     async def subscribe_to_cognify_info(websocket: WebSocket, pipeline_run_id: str):
         await websocket.accept()
 
+        # 从 cookie 或 查询参数获取 token
         access_token = websocket.cookies.get(os.getenv("AUTH_TOKEN_COOKIE_NAME", "auth_token"))
+        
+        # 如果cookie中没有，尝试从查询参数获取(支持无痕模式)
+        if not access_token:
+            query_params = dict(websocket.query_params)
+            access_token = query_params.get('token')
+            logger.info(f"Using token from query params: {bool(access_token)}")
 
         try:
             secret = os.getenv("FASTAPI_USERS_JWT_SECRET", "super_secret")
-
             strategy = DefaultJWTStrategy(secret, lifetime_seconds=3600)
-
             db_engine = get_relational_engine()
 
             async with db_engine.get_async_session() as session:
                 async with get_user_db_context(session) as user_db:
                     async with get_user_manager_context(user_db) as user_manager:
-                        user = await get_authenticated_user(
-                            cookie=access_token,
-                            strategy_cookie=strategy,
-                            user_manager=user_manager,
-                            bearer=None,
-                        )
+                        # 使用strategy直接解码token获取user
+                        user = await strategy.read_token(access_token, user_manager)
+                        if user is None:
+                            raise Exception("Invalid token or user not found")
         except Exception as error:
             logger.error(f"Authentication failed: {str(error)}")
             await websocket.close(code=WS_1008_POLICY_VIOLATION, reason="Unauthorized")

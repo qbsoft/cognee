@@ -22,6 +22,24 @@ class RelationalConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
 
+    def __init__(self, **data):
+        """Initialize RelationalConfig with support for both DB_* and POSTGRESQL_* env vars."""
+        super().__init__(**data)
+        
+        # Support POSTGRESQL_* environment variables from settings.env
+        if not self.db_host:
+            self.db_host = os.getenv('POSTGRESQL_HOST')
+        if not self.db_port:
+            self.db_port = os.getenv('POSTGRESQL_PORT')
+        if not self.db_username:
+            self.db_username = os.getenv('POSTGRESQL_USER')
+        if not self.db_password:
+            self.db_password = os.getenv('POSTGRESQL_PASSWORD')
+        if self.db_name == "cognee_db":  # Only use default if not explicitly set
+            postgresql_db = os.getenv('POSTGRESQL_DATABASE')
+            if postgresql_db:
+                self.db_name = postgresql_db
+
     @pydantic.model_validator(mode="after")
     def fill_derived(self):
         # Set file path based on graph database provider if no file path is provided

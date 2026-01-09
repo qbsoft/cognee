@@ -1,0 +1,64 @@
+{
+    "common": {
+        "connected": "已连接",
+        "notConnected": "未连接",
+        "cancel": "取消",
+        "confirm": "确认",
+        "connect": "连接",
+        "add": "添加",
+        "delete": "删除",
+        "edit": "编辑",
+        "save": "保存"
+    },
+    "navigation": {
+        "addData": "添加数据到 cognee",
+        "notebooks": "笔记本",
+        "instances": "Cognee 实例",
+        "sync": "同步",
+        "premium": "高级版",
+        "apiKeys": "API 密钥"
+    },
+    "instances": {
+        "localCognee": "本地 cognee",
+        "cloudCognee": "云端 cognee",
+        "mcpConnected": "MCP 已连接",
+        "mcpDisconnected": "MCP 未连接"
+    },
+    "datasets": {
+        "noDatasets": "这里没有数据集,点击 + 添加一个",
+        "addDataTitle": "添加新数据到数据集?",
+        "selectDataset": "选择数据集"
+    },
+    "notebooks": {
+        "createNew": "创建新笔记本?",
+        "tutorial": "使用 Cognee 进行 Python 开发教程 🧠"
+    },
+    "sync": {
+        "title": "将本地数据集与云端数据集同步?",
+        "description": "这将同步您的本地数据集与云端。"
+    },
+    "cloud": {
+        "connectTitle": "连接到云端?",
+        "apiKeyPrompt": "请提供您的 API 密钥。您可以在",
+        "ourPlatform": "我们的平台",
+        "apiKeyPlaceholder": "云端 API 密钥"
+    },
+    "auth": {
+        "login": {
+            "title": "欢迎回来",
+            "subtitle": "登录以继续使用 Cognee",
+            "emailLabel": "邮箱地址",
+            "emailPlaceholder": "your@email.com",
+            "passwordLabel": "密码",
+            "passwordPlaceholder": "请输入密码",
+            "loginButton": "登录",
+            "signupLink": "或者去注册 ->",
+            "invalidCredentials": "用户名或密码错误"
+        },
+        "signup": {
+            "title": "欢迎注册",
+            "subtitle": "开始使用 Cognee",
+            "loginLink": "已有账号？去登录 ->"
+        }
+    }
+}

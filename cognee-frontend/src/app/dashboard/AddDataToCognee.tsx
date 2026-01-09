@@ -1,9 +1,11 @@
 import { FormEvent, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { LoadingIndicator } from "@/ui/App";
 import { useModal } from "@/ui/elements/Modal";
 import { CloseIcon, MinusIcon, PlusIcon } from "@/ui/Icons";
 import { CTAButton, GhostButton, IconButton, Modal, NeutralButton, Select } from "@/ui/elements";
+import "@/i18n/i18n";
 
 import addData from "@/modules/ingestion/addData";
 import { Dataset } from "@/modules/ingestion/useDatasets";
@@ -12,10 +14,12 @@ import cognifyDataset from "@/modules/datasets/cognifyDataset";
 interface AddDataToCogneeProps {
   datasets: Dataset[];
   refreshDatasets: () => void;
+  getDatasetData?: (datasetId: string) => Promise<any>;
   useCloud?: boolean;
 }
 
-export default function AddDataToCognee({ datasets, refreshDatasets, useCloud = false }: AddDataToCogneeProps) {
+export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetData, useCloud = false }: AddDataToCogneeProps) {
+  const { t } = useTranslation();
   const [filesForUpload, setFilesForUpload] = useState<File[]>([]);
 
   const addFiles = useCallback((event: FormEvent<HTMLInputElement>) => {
@@ -50,8 +54,14 @@ export default function AddDataToCognee({ datasets, refreshDatasets, useCloud = 
       filesForUpload,
       useCloud
     )
-      .then(({ dataset_id, dataset_name }) => {
-        refreshDatasets();
+      .then(async ({ dataset_id, dataset_name }) => {
+        // Refresh datasets list
+        await refreshDatasets();
+        
+        // Refresh the specific dataset's data to show newly added items
+        if (getDatasetData) {
+          await getDatasetData(dataset_id);
+        }
 
         return cognifyDataset(
           {
@@ -64,7 +74,14 @@ export default function AddDataToCognee({ datasets, refreshDatasets, useCloud = 
         )
           .then(() => {
             setFilesForUpload([]);
+            // Show success feedback
+            alert(`Data successfully added to dataset "${dataset_name}"!`);
           });
+      })
+      .catch((error) => {
+        console.error("Error adding data:", error);
+        alert(`Failed to add data: ${error.message}`);
+        throw error;
       });
   }, [filesForUpload, refreshDatasets, useCloud]);
 
@@ -80,16 +97,16 @@ export default function AddDataToCognee({ datasets, refreshDatasets, useCloud = 
     <>
       <GhostButton onClick={openAddDataModal} className="mb-5 py-1.5 !px-2 text-sm w-full items-center justify-start">
         <PlusIcon />
-        Add data to cognee
+        {t("navigation.addData")}
       </GhostButton>
 
       <Modal isOpen={isAddDataModalOpen}>
         <div className="w-full max-w-2xl">
           <div className="flex flex-row items-center justify-between">
-            <span className="text-2xl">Add new data to a dataset?</span>
+            <span className="text-2xl">{t("datasets.addDataTitle")}</span>
             <IconButton disabled={isProcessingDataWithCognee} onClick={closeAddDataModal}><CloseIcon /></IconButton>
           </div>
-          <div className="mt-8 mb-6">Please select a {useCloud ? "cloud" : "local"} dataset to add data in.<br/> If you don&apos;t have any, don&apos;t worry, we will create one for you.</div>
+          <div className="mt-8 mb-6">Please select a {useCloud ? "cloud" : "local"} dataset to add data in.<br /> If you don&apos;t have any, don&apos;t worry, we will create one for you.</div>
           <form onSubmit={submitDataToCognee}>
             <div className="max-w-md flex flex-col gap-4">
               <Select defaultValue={datasets.length ? datasets[0].id : ""} name="datasetName">
@@ -117,10 +134,10 @@ export default function AddDataToCognee({ datasets, refreshDatasets, useCloud = 
               )}
             </div>
             <div className="flex flex-row gap-4 mt-4 justify-end">
-              <GhostButton disabled={isProcessingDataWithCognee} type="button" onClick={() => closeAddDataModal()}>cancel</GhostButton>
+              <GhostButton disabled={isProcessingDataWithCognee} type="button" onClick={() => closeAddDataModal()}>{t("common.cancel")}</GhostButton>
               <CTAButton disabled={isProcessingDataWithCognee} type="submit">
                 {isProcessingDataWithCognee && <LoadingIndicator color="white" />}
-                add
+                {t("common.add")}
               </CTAButton>
             </div>
           </form>

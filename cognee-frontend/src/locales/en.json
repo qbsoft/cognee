@@ -1,0 +1,64 @@
+{
+    "common": {
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "cancel": "cancel",
+        "confirm": "confirm",
+        "connect": "connect",
+        "add": "add",
+        "delete": "delete",
+        "edit": "edit",
+        "save": "save"
+    },
+    "navigation": {
+        "addData": "Add data to cognee",
+        "notebooks": "Notebooks",
+        "instances": "Cognee Instances",
+        "sync": "Sync",
+        "premium": "Premium",
+        "apiKeys": "API keys"
+    },
+    "instances": {
+        "localCognee": "local cognee",
+        "cloudCognee": "cloud cognee",
+        "mcpConnected": "MCP connected",
+        "mcpDisconnected": "MCP disconnected"
+    },
+    "datasets": {
+        "noDatasets": "No datasets here, add one by clicking +",
+        "addDataTitle": "Add new data to a dataset?",
+        "selectDataset": "Select dataset"
+    },
+    "notebooks": {
+        "createNew": "Create a new notebook?",
+        "tutorial": "Python Development with Cognee Tutorial 🧠"
+    },
+    "sync": {
+        "title": "Sync local datasets with cloud datasets?",
+        "description": "This will synchronize your local datasets with the cloud."
+    },
+    "cloud": {
+        "connectTitle": "Connect to cloud?",
+        "apiKeyPrompt": "Please provide your API key. You can find it on",
+        "ourPlatform": "our platform.",
+        "apiKeyPlaceholder": "cloud API key"
+    },
+    "auth": {
+        "login": {
+            "title": "Welcome",
+            "subtitle": "Log in to continue with Cognee",
+            "emailLabel": "Email address",
+            "emailPlaceholder": "your@email.com",
+            "passwordLabel": "Password",
+            "passwordPlaceholder": "Enter your password",
+            "loginButton": "Login",
+            "signupLink": "Or go to Sign up ->",
+            "invalidCredentials": "Invalid username or password"
+        },
+        "signup": {
+            "title": "Welcome to Sign Up",
+            "subtitle": "Start using Cognee",
+            "loginLink": "Already have an account? Go to Login ->"
+        }
+    }
+}

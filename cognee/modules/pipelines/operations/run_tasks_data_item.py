@@ -24,6 +24,7 @@ from cognee.modules.pipelines.models.PipelineRunInfo import (
 )
 from cognee.modules.pipelines.models.DataItemStatus import DataItemStatus
 from cognee.modules.pipelines.operations.run_tasks_with_telemetry import run_tasks_with_telemetry
+from cognee.modules.data.methods.update_pipeline_status import mark_all_stages_completed
 from ..tasks.task import Task
 
 logger = get_logger("run_tasks_data_item")
@@ -119,6 +120,9 @@ async def run_tasks_data_item_incremental(
             status_for_pipeline[str(dataset.id)] = DataItemStatus.DATA_ITEM_PROCESSING_COMPLETED
             await session.merge(data_point)
             await session.commit()
+        
+        # Mark all pipeline stages as completed
+        await mark_all_stages_completed(data_id, dataset.id)
 
         yield {
             "run_info": PipelineRunCompleted(
@@ -175,6 +179,13 @@ async def run_tasks_data_item_regular(
     Yields:
         Dict containing run_info for each processing step
     """
+    # Get data_id for status update
+    if isinstance(data_item, Data):
+        data_id = data_item.id
+    else:
+        # For new data items, we need to get the id after ingestion
+        data_id = None
+    
     # Process data based on data_item and list of tasks
     async for result in run_tasks_with_telemetry(
         tasks=tasks,
@@ -189,6 +200,10 @@ async def run_tasks_data_item_regular(
             dataset_name=dataset.name,
             payload=result,
         )
+    
+    # Mark all pipeline stages as completed
+    if data_id:
+        await mark_all_stages_completed(data_id, dataset.id)
 
     yield {
         "run_info": PipelineRunCompleted(

@@ -48,6 +48,10 @@ class UserRead(schemas.BaseUser[uuid_UUID]):
 class UserCreate(schemas.BaseUserCreate):
     tenant_id: Optional[uuid_UUID] = None
     is_verified: bool = True
+    
+    # 新增字段：支持通过租户编码或邀请令牌注册
+    tenant_code: Optional[str] = None  # 6位租户编码
+    invite_token: Optional[str] = None  # 邀请令牌
 
 
 class UserUpdate(schemas.BaseUserUpdate):

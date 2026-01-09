@@ -31,11 +31,20 @@ async def get_all_user_permission_datasets(user: User, permission_type: str) -> 
         datasets.extend(await get_principal_datasets(tenant, permission_type))
 
         # Get all datasets Users roles have access to
+        roles = []
         if isinstance(user, SimpleNamespace):
             # If simple namespace use roles defined in user
-            roles = user.roles
+            roles = getattr(user, "roles", [])
         else:
-            roles = await user.awaitable_attrs.roles
+            try:
+                roles = await user.awaitable_attrs.roles
+            except Exception as e:
+                # If roles cannot be lazy-loaded (e.g., detached instance), log and continue
+                logger.warning(
+                    "Failed to load user roles for permission datasets: %s", str(e)
+                )
+                roles = []
+
         for role in roles:
             datasets.extend(await get_principal_datasets(role, permission_type))
 

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Tuple, List, Any, Dict, Optional
 from cognee.infrastructure.engine import DataPoint, Edge
 from cognee.modules.storage.utils import copy_model
+from cognee.modules.engine.utils import translate_relationship_name
 
 
 def _extract_field_data(field_value: Any) -> List[Tuple[Optional[Edge], List[DataPoint]]]:
@@ -81,8 +82,10 @@ def _get_relationship_key(field_name: str, edge_metadata: Optional[Edge]) -> str
         and hasattr(edge_metadata, "relationship_type")
         and edge_metadata.relationship_type
     ):
-        return edge_metadata.relationship_type
-    return field_name
+        # 翻译关系类型名称
+        return translate_relationship_name(edge_metadata.relationship_type)
+    # 翻译字段名（如果是系统内置的英文字段名）
+    return translate_relationship_name(field_name)
 
 
 def _generate_property_key(data_point_id: str, relationship_key: str, target_id: str) -> str:

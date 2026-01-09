@@ -1,5 +1,6 @@
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, String, ForeignKey, UUID
+from sqlalchemy import Column, String, ForeignKey, UUID, DateTime
+from datetime import datetime, timezone
 from .Principal import Principal
 from .User import User
 from .Role import Role
@@ -10,6 +11,12 @@ class Tenant(Principal):
 
     id = Column(UUID, ForeignKey("principals.id"), primary_key=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    
+    # 6位唯一租户编码，用于用户注册
+    tenant_code = Column(String(6), unique=True, nullable=False, index=True)
+    
+    # 租户有效期，超过有效期的租户用户无法登录
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
     owner_id = Column(UUID, index=True)
 

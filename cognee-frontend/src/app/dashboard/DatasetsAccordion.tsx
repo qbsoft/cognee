@@ -1,6 +1,8 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useRouter } from "next/navigation";
 import { useBoolean } from "@/utils";
 import { Accordion, CTAButton, GhostButton, IconButton, Input, Modal, PopupMenu } from "@/ui/elements";
 import { AccordionProps } from "@/ui/elements/Accordion";
@@ -10,10 +12,12 @@ import addData from "@/modules/ingestion/addData";
 import cognifyDataset from "@/modules/datasets/cognifyDataset";
 import { DataFile } from "@/modules/ingestion/useData";
 import { LoadingIndicator } from "@/ui/App";
+import "@/i18n/i18n";
 
 interface DatasetsChangePayload {
   datasets: Dataset[]
   refreshDatasets: () => void;
+  getDatasetData: (datasetId: string) => Promise<any>;
 }
 
 export interface DatasetsAccordionProps extends Omit<AccordionProps, "isOpen" | "openAccordion" | "closeAccordion" | "children"> {
@@ -30,6 +34,9 @@ export default function DatasetsAccordion({
   onDatasetsChange,
   useCloud = false,
 }: DatasetsAccordionProps) {
+  const { t } = useTranslation();
+  const router = useRouter();
+
   const {
     value: isDatasetsPanelOpen,
     setTrue: openDatasetsPanel,
@@ -80,15 +87,16 @@ export default function DatasetsAccordion({
 
   const refreshDatasetsAndData = useCallback(() => {
     refreshDatasets()
-     .then(refreshOpenDatasetsData);
+      .then(refreshOpenDatasetsData);
   }, [refreshDatasets, refreshOpenDatasetsData]);
 
   useEffect(() => {
     onDatasetsChange?.({
       datasets,
       refreshDatasets: refreshDatasetsAndData,
+      getDatasetData,
     });
-  }, [datasets, onDatasetsChange, refreshDatasets, refreshDatasetsAndData]);
+  }, [datasets, onDatasetsChange, refreshDatasets, refreshDatasetsAndData, getDatasetData]);
 
   const {
     value: isNewDatasetModalOpen,
@@ -134,7 +142,7 @@ export default function DatasetsAccordion({
   } = useBoolean(false);
 
   const [datasetToRemove, setDatasetToRemove] = useState<Dataset | null>(null);
-  
+
   const handleDatasetRemove = (dataset: Dataset) => {
     setDatasetToRemove(dataset);
     openRemoveDatasetModal();
@@ -159,6 +167,14 @@ export default function DatasetsAccordion({
   };
 
   const [datasetInProcessing, setProcessingDataset] = useState<Dataset | null>(null);
+
+  const handleDatasetClick = (dataset: Dataset) => {
+    router.push(`/datasets/${dataset.id}`);
+  };
+
+  const handleDatasetSearch = (dataset: Dataset) => {
+    router.push(`/datasets/${dataset.id}/search`);
+  };
 
   const handleAddFiles = (dataset: Dataset, event: ChangeEvent<HTMLInputElement>) => {
     event.stopPropagation();
@@ -187,6 +203,11 @@ export default function DatasetsAccordion({
           .finally(() => {
             setProcessingDataset(null);
           });
+      })
+      .catch((error) => {
+        setProcessingDataset(null);
+        console.error("Error adding data:", error);
+        alert(error.message); // Temporary simple feedback
       });
   };
 
@@ -211,7 +232,7 @@ export default function DatasetsAccordion({
 
     if (dataToRemove) {
       removeDatasetData(dataToRemove.datasetId, dataToRemove.id)
-         .then(() => {
+        .then(() => {
           closeRemoveDataModal();
           setDataToRemove(null);
           refreshDatasetsAndData();
@@ -239,7 +260,7 @@ export default function DatasetsAccordion({
         <div className="flex flex-col">
           {datasets.length === 0 && (
             <div className="flex flex-row items-baseline-last text-sm text-gray-400 mt-2 px-2">
-              <span>No datasets here, add one by clicking +</span>
+              <span>{t("datasets.noDatasets")}</span>
             </div>
           )}
           {datasets.map((dataset) => {
@@ -247,7 +268,13 @@ export default function DatasetsAccordion({
               <Accordion
                 key={dataset.id}
                 title={(
-                  <div className="flex flex-row gap-2 items-center py-1.5 cursor-pointer">
+                  <div 
+                    className="flex flex-row gap-2 items-center py-1.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDatasetClick(dataset);
+                    }}
+                  >
                     {datasetInProcessing?.id == dataset.id ? <LoadingIndicator /> : <DatasetIcon />}
                     <span className="text-xs">{dataset.name}</span>
                   </div>
@@ -265,6 +292,8 @@ export default function DatasetsAccordion({
                         </div>
                       </div>
                       <div className="flex flex-col gap-0.5 items-start">
+                        <div onClick={() => handleDatasetClick(dataset)} className="hover:bg-gray-100 w-full text-left px-2 cursor-pointer">view details</div>
+                        <div onClick={() => handleDatasetSearch(dataset)} className="hover:bg-gray-100 w-full text-left px-2 cursor-pointer">search</div>
                         <div onClick={() => handleDatasetRemove(dataset)} className="hover:bg-gray-100 w-full text-left px-2 cursor-pointer">delete</div>
                       </div>
                     </PopupMenu>

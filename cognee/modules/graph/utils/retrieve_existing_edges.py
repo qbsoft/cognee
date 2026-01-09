@@ -1,6 +1,6 @@
 from cognee.infrastructure.databases.graph import get_graph_engine
 from cognee.infrastructure.engine import DataPoint
-from cognee.modules.engine.utils import generate_node_id
+from cognee.modules.engine.utils import generate_node_id, translate_relationship_name
 from cognee.shared.data_models import KnowledgeGraph
 
 
@@ -53,12 +53,17 @@ async def retrieve_existing_edges(
             entity_node_id = generate_node_id(node.id)
 
             if str(type_node_id) not in processed_nodes:
-                type_node_edges.append((data_chunk.id, type_node_id, "exists_in"))
+                # 使用翻译后的关系名称
+                relationship_name = translate_relationship_name("exists_in")
+                type_node_edges.append((data_chunk.id, type_node_id, relationship_name))
                 processed_nodes[str(type_node_id)] = True
 
             if str(entity_node_id) not in processed_nodes:
-                entity_node_edges.append((data_chunk.id, entity_node_id, "mentioned_in"))
-                type_entity_edges.append((entity_node_id, type_node_id, "is_a"))
+                # 使用翻译后的关系名称
+                mentioned_in_name = translate_relationship_name("mentioned_in")
+                is_a_name = translate_relationship_name("is_a")
+                entity_node_edges.append((data_chunk.id, entity_node_id, mentioned_in_name))
+                type_entity_edges.append((entity_node_id, type_node_id, is_a_name))
                 processed_nodes[str(entity_node_id)] = True
 
         graph_node_edges = [

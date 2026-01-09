@@ -6,8 +6,8 @@ from typing_extensions import Annotated
 from fastapi import status
 from fastapi import APIRouter
 from fastapi.encoders import jsonable_encoder
-from fastapi import HTTPException, Query, Depends
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import HTTPException, Query, Depends, Response, Body
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 
 from cognee.api.DTO import InDTO, OutDTO
 from cognee.infrastructure.databases.relational import get_relational_engine
@@ -25,6 +25,10 @@ from cognee.modules.graph.methods import get_formatted_graph_data
 from cognee.modules.pipelines.models import PipelineRunStatus
 from cognee.shared.utils import send_telemetry
 from cognee import __version__ as cognee_version
+from cognee.infrastructure.files.storage import get_file_storage
+from cognee.infrastructure.files.utils.get_data_file_path import get_data_file_path
+import os
+from urllib.parse import quote
 
 logger = get_logger()
 
@@ -41,6 +45,33 @@ class DatasetDTO(OutDTO):
     owner_id: UUID
 
 
+class StageStatusDTO(OutDTO):
+    status: str = "pending"  # 'pending' | 'in_progress' | 'completed' | 'failed' - default to pending
+    progress: Optional[int] = None  # 0-100
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    # Stage-specific counts
+    chunk_count: Optional[int] = None
+    node_count: Optional[int] = None
+    edge_count: Optional[int] = None
+    vector_count: Optional[int] = None
+
+
+class PipelineStatusDTO(OutDTO):
+    parsing: Optional[StageStatusDTO] = None
+    chunking: Optional[StageStatusDTO] = None
+    graph_indexing: Optional[StageStatusDTO] = None
+    vector_indexing: Optional[StageStatusDTO] = None
+
+
+class DataStatsDTO(OutDTO):
+    chunk_count: Optional[int] = None
+    node_count: Optional[int] = None
+    edge_count: Optional[int] = None
+    vector_count: Optional[int] = None
+
+
 class DataDTO(OutDTO):
     id: UUID
     name: str
@@ -50,6 +81,10 @@ class DataDTO(OutDTO):
     mime_type: str
     raw_data_location: str
     dataset_id: UUID
+    data_size: Optional[int] = None
+    token_count: Optional[int] = None
+    pipeline_status: Optional[PipelineStatusDTO] = None
+    stats: Optional[DataStatsDTO] = None
 
 
 class GraphNodeDTO(OutDTO):
@@ -223,21 +258,31 @@ def get_datasets_router() -> APIRouter:
         responses={404: {"model": ErrorResponseDTO}},
     )
     async def delete_data(
-        dataset_id: UUID, data_id: UUID, user: User = Depends(get_authenticated_user)
+        dataset_id: UUID, 
+        data_id: UUID, 
+        mode: str = "soft",
+        user: User = Depends(get_authenticated_user)
     ):
         """
-        Delete a specific data item from a dataset.
+        Delete a specific data item from a dataset with cascade deletion.
 
-        This endpoint removes a specific data item from a dataset while keeping
-        the dataset itself intact. The user must have delete permissions on the
-        dataset to perform this operation.
+        This endpoint removes a specific data item from a dataset along with all
+        its associated data including chunks, graph nodes/edges, and vector embeddings.
+        The user must have delete permissions on the dataset to perform this operation.
 
         ## Path Parameters
         - **dataset_id** (UUID): The unique identifier of the dataset containing the data
         - **data_id** (UUID): The unique identifier of the data item to delete
 
+        ## Query Parameters
+        - **mode** (str): Deletion mode - "soft" (default) or "hard"
+          - soft: Removes the data but keeps related entities that might be shared
+          - hard: Also removes degree-one entity nodes that become orphaned
+
         ## Response
-        No content returned on successful deletion.
+        Returns deletion details including:
+        - Deleted node counts (chunks, entities, etc.)
+        - Deleted vector counts
 
         ## Error Codes
         - **404 Not Found**: Dataset or data item doesn't exist, or user doesn't have access
@@ -250,25 +295,40 @@ def get_datasets_router() -> APIRouter:
                 "endpoint": f"DELETE /v1/datasets/{str(dataset_id)}/data/{str(data_id)}",
                 "dataset_id": str(dataset_id),
                 "data_id": str(data_id),
+                "deletion_mode": mode,
                 "cognee_version": cognee_version,
             },
         )
 
-        from cognee.modules.data.methods import get_data, delete_data
-        from cognee.modules.data.methods import get_dataset
-
-        # Check if user has permission to access dataset and data by trying to get the dataset
-        dataset = await get_dataset(user.id, dataset_id)
-
-        if dataset is None:
-            raise DatasetNotFoundError(message=f"Dataset ({str(dataset_id)}) not found.")
-
-        data = await get_data(user.id, data_id)
-
-        if data is None:
-            raise DataNotFoundError(message=f"Data ({str(data_id)}) not found.")
-
-        await delete_data(data)
+        try:
+            # Use the comprehensive cascade deletion from cognee.api.v1.delete
+            from cognee.api.v1.delete.delete import delete as delete_cascade
+            
+            result = await delete_cascade(
+                data_id=data_id,
+                dataset_id=dataset_id,
+                mode=mode,
+                user=user
+            )
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success",
+                    "message": "Data deleted successfully with cascade",
+                    "dataId": str(data_id),
+                    "deletedCounts": result.get("graph_deletions", {}),
+                    "deletedNodeIds": result.get("deleted_node_ids", [])
+                }
+            )
+        except (DatasetNotFoundError, DataNotFoundError) as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as error:
+            logger.error(f"Error deleting data: {str(error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error deleting data: {str(error)}"
+            ) from error
 
     @router.get("/{dataset_id}/graph", response_model=GraphDTO)
     async def get_dataset_graph(dataset_id: UUID, user: User = Depends(get_authenticated_user)):
@@ -298,16 +358,15 @@ def get_datasets_router() -> APIRouter:
 
     @router.get(
         "/{dataset_id}/data",
-        response_model=list[DataDTO],
         responses={404: {"model": ErrorResponseDTO}},
     )
     async def get_dataset_data(dataset_id: UUID, user: User = Depends(get_authenticated_user)):
         """
-        Get all data items in a dataset.
+        Get all data items in a dataset with detailed processing status.
 
         This endpoint retrieves all data items (documents, files, etc.) that belong
-        to a specific dataset. Each data item includes metadata such as name, type,
-        creation time, and storage location.
+        to a specific dataset. Each data item includes metadata, processing status,
+        and statistics about chunks, graph nodes, and vectors.
 
         ## Path Parameters
         - **dataset_id** (UUID): The unique identifier of the dataset
@@ -321,6 +380,10 @@ def get_datasets_router() -> APIRouter:
         - **extension**: File extension
         - **mime_type**: MIME type of the data
         - **raw_data_location**: Storage location of the raw data
+        - **data_size**: File size in bytes
+        - **token_count**: Number of tokens
+        - **pipeline_status**: Processing status for each stage (parsing, chunking, graph_indexing, vector_indexing)
+        - **stats**: Statistics (chunk_count, node_count, edge_count, vector_count)
 
         ## Error Codes
         - **404 Not Found**: Dataset doesn't exist or user doesn't have access
@@ -337,6 +400,7 @@ def get_datasets_router() -> APIRouter:
         )
 
         from cognee.modules.data.methods import get_dataset_data
+        from cognee.modules.data.methods.get_data_stats import get_batch_data_stats
 
         # Verify user has permission to read dataset
         dataset = await get_authorized_existing_datasets([dataset_id], "read", user)
@@ -351,16 +415,177 @@ def get_datasets_router() -> APIRouter:
 
         dataset_data = await get_dataset_data(dataset_id=dataset_id)
 
-        if dataset_data is None:
+        if dataset_data is None or len(dataset_data) == 0:
             return []
 
-        return [
-            dict(
-                **jsonable_encoder(data),
-                dataset_id=dataset_id,
+        # Get stats for all data items in batch
+        data_ids = [data.id for data in dataset_data]
+        stats_map = await get_batch_data_stats(data_ids)
+
+        # Build response with enhanced data
+        result = []
+        for data in dataset_data:
+            data_dict = jsonable_encoder(data)
+            data_dict["dataset_id"] = str(dataset_id)
+            
+            # Parse and format pipeline_status
+            pipeline_status = data.pipeline_status or {}
+            formatted_pipeline_status = {}
+
+            # Debug log: print raw pipeline_status from database
+            logger.info(f"[DEBUG] Data {data.id} raw pipeline_status: {pipeline_status}")
+
+            current_dataset_id_str = str(dataset_id)
+
+            for stage in ["parsing", "chunking", "graph_indexing", "vector_indexing"]:
+                stage_map = pipeline_status.get(stage) or {}
+
+                stage_status = None
+                if isinstance(stage_map, dict):
+                    stage_status = stage_map.get(current_dataset_id_str)
+
+                if not stage_status:
+                    # Default to pending if no status recorded for this dataset
+                    stage_status = {
+                        "status": "pending",
+                        "progress": 0,
+                    }
+
+                formatted_pipeline_status[stage] = stage_status
+
+            # Debug log: print formatted pipeline_status
+            logger.info(f"[DEBUG] Data {data.id} formatted pipeline_status: {formatted_pipeline_status}")
+
+            data_dict["pipeline_status"] = formatted_pipeline_status
+            
+            # Add stats
+            data_dict["stats"] = stats_map.get(data.id, {})
+            
+            result.append(data_dict)
+
+        return JSONResponse(
+            status_code=200,
+            content=result
+        )
+
+    @router.post("/{dataset_id}/data/batch-delete")
+    async def batch_delete_data(
+        dataset_id: UUID,
+        data_ids: List[UUID] = Body(..., embed=True),
+        mode: str = Body("soft", embed=True),
+        user: User = Depends(get_authenticated_user)
+    ):
+        """
+        Batch delete multiple data items from a dataset.
+
+        This endpoint removes multiple data items from a dataset with cascade deletion
+        of all associated data (chunks, graph nodes, vectors). This is more efficient
+        than deleting files one by one.
+
+        ## Path Parameters
+        - **dataset_id** (UUID): The unique identifier of the dataset
+
+        ## Request Body
+        - **data_ids** (List[UUID]): List of data item UUIDs to delete
+        - **mode** (str): Deletion mode - "soft" (default) or "hard"
+
+        ## Response
+        Returns summary of deletion operation:
+        - Total deleted count
+        - Deleted data IDs
+        - Aggregate counts (chunks, nodes, vectors)
+
+        ## Error Codes
+        - **404 Not Found**: Dataset doesn't exist or user doesn't have access
+        - **500 Internal Server Error**: Error during deletion
+        """
+        send_telemetry(
+            "Datasets API Endpoint Invoked",
+            user.id,
+            additional_properties={
+                "endpoint": f"POST /v1/datasets/{str(dataset_id)}/data/batch-delete",
+                "dataset_id": str(dataset_id),
+                "data_count": len(data_ids),
+                "deletion_mode": mode,
+                "cognee_version": cognee_version,
+            },
+        )
+
+        try:
+            from cognee.api.v1.delete.delete import delete as delete_cascade
+            from cognee.modules.data.methods import get_data
+
+            # Verify user has delete permission on dataset
+            dataset = await get_authorized_existing_datasets([dataset_id], "delete", user)
+            
+            if not dataset or len(dataset) == 0:
+                raise DatasetNotFoundError(
+                    message=f"Dataset ({str(dataset_id)}) not found or no delete permission."
+                )
+
+            # Delete each file and collect results
+            deleted_data_ids = []
+            total_chunks = 0
+            total_nodes = 0
+            total_vectors = 0
+            failed_deletions = []
+
+            for data_id in data_ids:
+                try:
+                    # Check if data exists
+                    data = await get_data(user.id, data_id)
+                    if not data:
+                        logger.warning(f"Data item {data_id} not found, skipping")
+                        failed_deletions.append({
+                            "dataId": str(data_id),
+                            "error": "Data not found"
+                        })
+                        continue
+
+                    # Perform cascade deletion
+                    result = await delete_cascade(
+                        data_id=data_id,
+                        dataset_id=dataset_id,
+                        mode=mode,
+                        user=user
+                    )
+
+                    deleted_data_ids.append(str(data_id))
+                    
+                    # Aggregate deletion counts
+                    graph_deletions = result.get("graph_deletions", {})
+                    total_chunks += graph_deletions.get("chunks", 0)
+                    total_nodes += sum(graph_deletions.values())
+                    total_vectors += len(result.get("deleted_node_ids", []))
+
+                except Exception as e:
+                    logger.error(f"Error deleting data {data_id}: {str(e)}")
+                    failed_deletions.append({
+                        "dataId": str(data_id),
+                        "error": str(e)
+                    })
+
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "success",
+                    "deletedCount": len(deleted_data_ids),
+                    "deletedDataIds": deleted_data_ids,
+                    "deletedChunkCount": total_chunks,
+                    "deletedNodeCount": total_nodes,
+                    "deletedVectorCount": total_vectors,
+                    "failedDeletions": failed_deletions
+                }
             )
-            for data in dataset_data
-        ]
+
+        except DatasetNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as error:
+            logger.error(f"Error in batch delete: {str(error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error in batch delete: {str(error)}"
+            ) from error
 
     @router.get("/status", response_model=dict[str, PipelineRunStatus])
     async def get_dataset_status(
@@ -411,7 +636,7 @@ def get_datasets_router() -> APIRouter:
         except Exception as error:
             return JSONResponse(status_code=409, content={"error": str(error)})
 
-    @router.get("/{dataset_id}/data/{data_id}/raw", response_class=FileResponse)
+    @router.get("/{dataset_id}/data/{data_id}/raw", response_class=StreamingResponse)
     async def get_raw_data(
         dataset_id: UUID, data_id: UUID, user: User = Depends(get_authenticated_user)
     ):
@@ -475,6 +700,251 @@ def get_datasets_router() -> APIRouter:
                 message=f"Data ({data_id}) not found in dataset ({dataset_id})."
             )
 
-        return data.raw_data_location
+        # Get file storage and return the actual file
+        try:
+            raw_data_location = data.raw_data_location
+            logger.info(f"Attempting to retrieve file from: {raw_data_location}")
+            
+            # Use get_data_file_path to handle file:// prefix correctly
+            actual_file_path = get_data_file_path(raw_data_location)
+            logger.info(f"Actual file path after processing: {actual_file_path}")
+            
+            # Normalize path for Windows
+            normalized_path = os.path.normpath(actual_file_path)
+            file_dir = os.path.dirname(normalized_path)
+            file_name = os.path.basename(normalized_path)
+            
+            logger.info(f"File directory: {file_dir}, File name: {file_name}")
+            
+            file_storage = get_file_storage(file_dir)
+            
+            # Check if file exists
+            file_exists = await file_storage.file_exists(file_name)
+            logger.info(f"File exists check: {file_exists}")
+            
+            if not file_exists:
+                logger.error(f"File not found at location: {raw_data_location}")
+                raise DataNotFoundError(
+                    message=f"File not found at location: {raw_data_location}"
+                )
+            
+            # Return FileResponse with the actual file path
+            # For local storage, we need the full path
+            full_path = normalized_path
+            
+            logger.info(f"Returning file: {full_path} with media type: {data.mime_type}")
+            
+            # Read file content at once for smaller files
+            # This ensures file is properly closed and CORS headers work correctly
+            file_content = b""
+            async with file_storage.open(file_name, mode="rb") as file:
+                # Read file in chunks
+                chunk_size = 8192
+                while True:
+                    chunk = file.read(chunk_size)
+                    if not chunk:
+                        break
+                    file_content += chunk
+            
+            # Return as StreamingResponse with proper headers
+            from io import BytesIO
+            
+            async def file_iterator():
+                yield file_content
+            
+            # Encode filename for Content-Disposition header
+            # Use both filename and filename* for maximum compatibility
+            try:
+                # Try ASCII encoding first
+                data.name.encode('ascii')
+                # Pure ASCII filename - use simple format
+                filename_header = f'inline; filename="{data.name}"'
+            except UnicodeEncodeError:
+                # Non-ASCII characters - use dual encoding for compatibility
+                # filename with ASCII fallback + filename* with UTF-8 encoding
+                ascii_fallback = 'file'  # Simple fallback for old browsers
+                encoded_filename = quote(data.name, safe='')
+                # Both filename and filename* for maximum browser compatibility
+                filename_header = f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_filename}"
+            
+            response = StreamingResponse(
+                file_iterator(),
+                media_type=data.mime_type or "application/octet-stream",
+                headers={
+                    "Content-Disposition": filename_header,
+                    "Content-Length": str(len(file_content)),
+                }
+            )
+            
+            return response
+        except DataNotFoundError:
+            # Re-raise DataNotFoundError to maintain expected error handling
+            raise
+        except Exception as e:
+            logger.error(f"Error retrieving raw data file: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error retrieving raw data file: {str(e)}"
+            )
+
+    @router.post("/{dataset_id}/reprocess")
+    async def reprocess_dataset_files(
+        dataset_id: UUID,
+        data_ids: List[UUID] = Body(..., embed=True),
+        stages: List[str] = Body(["parsing", "chunking", "graph_indexing", "vector_indexing"], embed=True),
+        run_in_background: bool = Body(True, embed=True),
+        user: User = Depends(get_authenticated_user)
+    ):
+        """
+        Reprocess all data files in a dataset.
+
+        This endpoint resets pipeline status and re-runs the cognify pipeline for all files
+        in the specified dataset to ensure consistency after failures or config changes.
+
+        ## Path Parameters
+        - **dataset_id** (UUID): The unique identifier of the dataset
+
+        ## Request Parameters
+        - **data_ids**: List of data item UUIDs to reprocess
+        - **stages**: Pipeline stages to reprocess (default: all stages)
+        - **run_in_background**: Run processing asynchronously (default: true)
+
+        ## Response
+        Returns processing information with pipeline_run_id and affected data IDs.
+
+        ## Error Codes
+        - **404 Not Found**: Dataset or data items don't exist
+        - **403 Forbidden**: User doesn't have write permission
+        - **500 Internal Server Error**: Error starting reprocessing
+        """
+        logger.info(f"[REPROCESS] 收到重新处理请求: dataset_id={dataset_id}, data_count={len(data_ids)}, run_in_background={run_in_background}")
+        
+        send_telemetry(
+            "Datasets API Endpoint Invoked",
+            user.id,
+            additional_properties={
+                "endpoint": f"POST /v1/datasets/{str(dataset_id)}/reprocess",
+                "dataset_id": str(dataset_id),
+                "data_count": len(data_ids),
+                "cognee_version": cognee_version,
+            },
+        )
+
+        try:
+            from cognee.modules.data.methods import get_dataset_data
+
+            # Verify user has write permission on dataset
+            dataset = await get_authorized_existing_datasets([dataset_id], "write", user)
+            
+            if not dataset or len(dataset) == 0:
+                raise DatasetNotFoundError(
+                    message=f"Dataset ({str(dataset_id)}) not found or no write permission."
+                )
+
+            # Get all data items in the dataset for full reprocessing
+            dataset_internal_id = dataset[0].id
+            data_items = await get_dataset_data(dataset_id=dataset_internal_id)
+
+            if not data_items or len(data_items) == 0:
+                raise DataNotFoundError(
+                    message="No data items found in dataset to reprocess"
+                )
+
+            # Reset pipeline status for specified stages
+            db_engine = get_relational_engine()
+            async with db_engine.get_async_session() as session:
+                for data in data_items:
+                    if not data.pipeline_status:
+                        data.pipeline_status = {}
+                    
+                    # Reset each specified stage to pending
+                    for stage in stages:
+                        if stage in ["parsing", "chunking", "graph_indexing", "vector_indexing"]:
+                            data.pipeline_status[stage] = {
+                                "status": "pending",
+                                "progress": 0,
+                                "started_at": None,
+                                "completed_at": None,
+                                "error": None
+                            }
+                    
+                    # Clear old incremental loading status to force reprocessing
+                    if "cognify_pipeline" in data.pipeline_status:
+                        dataset_status = data.pipeline_status.get("cognify_pipeline", {})
+                        if str(dataset_id) in dataset_status:
+                            del dataset_status[str(dataset_id)]
+                    
+                    session.add(data)
+                
+                await session.commit()
+
+            logger.info(f"[REPROCESS] 已重置 {len(data_items)} 个文件的pipeline_status为 pending")
+
+            # Trigger cognify processing with incremental_loading=False to force reprocessing
+            from cognee.api.v1.cognify.cognify import cognify
+            from cognee.modules.pipelines.models import PipelineRun
+            from sqlalchemy import delete as sql_delete
+            
+            # Delete old PipelineRun records to bypass dataset-level incremental check
+            async with db_engine.get_async_session() as session:
+                await session.execute(
+                    sql_delete(PipelineRun).where(
+                        PipelineRun.dataset_id == dataset_id,
+                        PipelineRun.pipeline_name == "cognify_pipeline"
+                    )
+                )
+                await session.commit()
+            
+            logger.info(f"[REPROCESS] 已删除旧的 PipelineRun 记录")
+            
+            pipeline_runs = await cognify(
+                datasets=[dataset_id],
+                user=user,
+                run_in_background=run_in_background,
+                incremental_loading=False  # Force reprocessing, ignore existing status
+            )
+
+            logger.info(f"[REPROCESS] Cognify 返回结果: {pipeline_runs}, 类型: {type(pipeline_runs)}")
+
+            # Handle different return types based on run_in_background
+            if run_in_background:
+                # Background mode returns dict: {dataset_id: PipelineRunInfo}
+                if isinstance(pipeline_runs, dict):
+                    if dataset_id in pipeline_runs:
+                        pipeline_run_id = str(pipeline_runs[dataset_id].pipeline_run_id)
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Pipeline started but dataset {dataset_id} not found in response"
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Unexpected pipeline response format"
+                    )
+            else:
+                # Blocking mode returns list
+                if not pipeline_runs or len(pipeline_runs) == 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Cognify pipeline failed to start. No pipeline runs were created."
+                    )
+                pipeline_run_id = str(pipeline_runs[0].pipeline_run_id)
+
+            return {
+                "pipelineRunId": pipeline_run_id,
+                "datasetId": str(dataset_id),
+                "affectedDataIds": [str(data.id) for data in data_items],
+                "status": "initiated"
+            }
+
+        except (DatasetNotFoundError, DataNotFoundError) as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as error:
+            logger.error(f"Error reprocessing dataset files: {str(error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error reprocessing dataset files: {str(error)}"
+            ) from error
 
     return router

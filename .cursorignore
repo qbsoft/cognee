@@ -1,0 +1,133 @@
+# Python 缓存和编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+*.egg
+
+# Python 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# Python 构建和分发
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+.Python
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+cover/
+
+# 类型检查缓存
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# IDE 配置
+.idea/
+.vscode/
+.spyderproject
+.spyproject
+.ropeproject
+
+# 环境变量和配置
+.env
+.env.local
+.env.*.local
+.local.env
+.prod.env
+.pdm.toml
+
+# 日志文件
+*.log
+logs/*.log
+
+# 数据目录和存储
+data/
+.data/
+.data_storage/
+.cognee_system/
+.cognee_cache/
+.artifacts/
+.anon_id
+cognee/.data/
+cognee/cache/
+tutorial_data/
+postgres_data/
+qdrant_storage/
+kuzu_db/
+.chromadb_data/
+*.lance/
+
+# Node.js 和前端构建
+node_modules/
+cognee-frontend/node_modules/
+cognee-frontend/.next/
+cognee-frontend/out/
+cognee-frontend/build/
+cognee-frontend/.pnp
+cognee-frontend/.pnp.js
+cognee-frontend/.yarn/
+cognee-frontend/coverage/
+cognee-frontend/.vercel/
+cognee-frontend/*.tsbuildinfo
+cognee-frontend/next-env.d.ts
+
+# 临时和测试目录
+working_dir_error_replication/
+code_pipeline_output*/
+evals/old/
+SWE-bench_testsample/
+
+# 系统文件
+.DS_Store
+*.pem
+
+# 数据库文件
+*.sqlite3
+*.sqlite3-journal
+db.sqlite3
+db.sqlite3-journal
+
+# 其他临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+

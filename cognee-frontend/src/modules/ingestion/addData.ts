@@ -30,6 +30,13 @@ export default async function addData(dataset: { id?: string, name?: string }, f
     return fetch("/v1/add", {
       method: "POST",
       body: formData,
-    }).then((response) => response.json());
+    })
+      .then((response) => response.json())
+      .catch((error) => {
+        if (error.status === 409) {
+          throw new Error("File already exists in dataset.");
+        }
+        throw error;
+      });
   }
 }

@@ -1,3 +1,8 @@
+**IMPORTANT: Output Language Requirement**
+- If the input text is in Chinese (简体中文), you MUST output all entity names, node names, and relationship names in Simplified Chinese (简体中文).
+- If the input text is in English, you may output in English.
+- Always match the language of the input text. For Chinese input, use Chinese characters for all names and relationships.
+
 You are an ontology master and need to extract the following ontology information from the text provided to you.
 The goal is to extract business logic and dependencies between different entities in the system.
 Relationships can't be empty, and have to be logical AND CONNECTING NODES IN THE ONTOLOGY.

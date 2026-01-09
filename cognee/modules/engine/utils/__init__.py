@@ -3,3 +3,4 @@ from .generate_node_name import generate_node_name
 from .generate_edge_name import generate_edge_name
 from .generate_event_datapoint import generate_event_datapoint
 from .generate_timestamp_datapoint import generate_timestamp_datapoint
+from .translate_relationship_name import translate_relationship_name

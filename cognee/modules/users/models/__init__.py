@@ -8,3 +8,5 @@ from .TenantDefaultPermissions import TenantDefaultPermissions
 from .Permission import Permission
 from .Tenant import Tenant
 from .ACL import ACL
+from .InviteToken import InviteToken
+from .ApiKey import ApiKey

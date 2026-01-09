@@ -13,10 +13,13 @@
     "classnames": "^2.5.1",
     "culori": "^4.0.1",
     "d3-force-3d": "^3.0.6",
+    "i18next": "^25.7.2",
     "next": "15.3.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.27.1",
+    "react-hot-toast": "^2.6.0",
+    "react-i18next": "^16.5.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

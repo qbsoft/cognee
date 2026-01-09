@@ -47,7 +47,7 @@ function useDatasets(useCloud = false) {
   //     checkDatasetStatuses(datasets);
   //   }, 50000);
   // }, [fetchDatasetStatuses]);
-  
+
   // useEffect(() => {
   //   return () => {
   //     if (statusTimeout.current !== null) {
@@ -58,7 +58,7 @@ function useDatasets(useCloud = false) {
   // }, []);
 
   const addDataset = useCallback((datasetName: string) => {
-    return createDataset({ name: datasetName  }, useCloud)
+    return createDataset({ name: datasetName }, useCloud)
       .then((dataset) => {
         setDatasets((datasets) => [
           ...datasets,
@@ -80,10 +80,10 @@ function useDatasets(useCloud = false) {
 
   const fetchDatasets = useCallback(() => {
     return fetch('/v1/datasets', {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }, useCloud)
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }, useCloud)
       .then((response) => response.json())
       .then((datasets) => {
         setDatasets(datasets);
@@ -103,22 +103,30 @@ function useDatasets(useCloud = false) {
     return fetch(`/v1/datasets/${datasetId}/data`, {}, useCloud)
       .then((response) => response.json())
       .then((data) => {
-        const datasetIndex = datasets.findIndex((dataset) => dataset.id === datasetId);
+        // Map backend snake_case to frontend camelCase and ensure datasetId is set
+        const mappedData = data.map((item: any) => ({
+          ...item,
+          datasetId: item.dataset_id || datasetId,  // Use backend field or fallback to param
+        }));
+        
+        setDatasets((prevDatasets) => {
+          const datasetIndex = prevDatasets.findIndex((dataset) => dataset.id === datasetId);
 
-        if (datasetIndex >= 0) {
-          setDatasets((datasets) => [
-           ...datasets.slice(0, datasetIndex),
-            {
-             ...datasets[datasetIndex],
-              data,
-            },
-           ...datasets.slice(datasetIndex + 1),
-          ]);
-        }
+          if (datasetIndex === -1) {
+            return prevDatasets;
+          }
 
-        return data;
+          const newDatasets = [...prevDatasets];
+          newDatasets[datasetIndex] = {
+            ...newDatasets[datasetIndex],
+            data: mappedData,
+          };
+          return newDatasets;
+        });
+
+        return mappedData;
       });
-  }, [datasets, useCloud]);
+  }, [useCloud]);
 
   const removeDatasetData = useCallback((datasetId: string, dataId: string) => {
     return fetch(`/v1/datasets/${datasetId}/data/${dataId}`, {

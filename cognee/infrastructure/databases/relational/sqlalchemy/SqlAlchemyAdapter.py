@@ -63,6 +63,7 @@ class SQLAlchemyAdapter:
                 pool_recycle=280,
                 pool_pre_ping=True,
                 pool_timeout=280,
+                connect_args={"timeout": 30, "command_timeout": 30},
             )
 
         self.sessionmaker = async_sessionmaker(bind=self.engine, expire_on_commit=False)
@@ -495,9 +496,14 @@ class SQLAlchemyAdapter:
             if not await file_storage.file_exists(db_name):
                 await file_storage.ensure_directory_exists()
 
-        async with self.engine.begin() as connection:
-            if len(Base.metadata.tables.keys()) > 0:
-                await connection.run_sync(Base.metadata.create_all)
+        try:
+            async with self.engine.begin() as connection:
+                if len(Base.metadata.tables.keys()) > 0:
+                    await connection.run_sync(Base.metadata.create_all)
+        except Exception as e:
+            logger.warning(f"Failed to create database schema: {e}. This may be retried later.")
+            # Don't raise - allow the application to start even if initial schema creation fails
+            # The schema will be created when needed
 
     async def delete_database(self):
         """

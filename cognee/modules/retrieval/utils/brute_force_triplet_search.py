@@ -11,6 +11,13 @@ from cognee.modules.graph.cognee_graph.CogneeGraph import CogneeGraph
 from cognee.modules.graph.cognee_graph.CogneeGraphElements import Edge
 from cognee.modules.users.models import User
 from cognee.shared.utils import send_telemetry
+from cognee.modules.retrieval.utils.result_quality_scorer import (
+    filter_low_quality_results,
+    rank_results_by_quality,
+)
+from cognee.modules.retrieval.utils.result_diversity import (
+    ensure_result_diversity,
+)
 
 logger = get_logger(level=ERROR)
 
@@ -61,7 +68,23 @@ async def get_memory_fragment(
 ) -> CogneeGraph:
     """Creates and initializes a CogneeGraph memory fragment with optional property projections."""
     if properties_to_project is None:
-        properties_to_project = ["id", "description", "name", "type", "text"]
+        # Include source tracing properties for DocumentChunk nodes
+        # These enable precise scroll positioning in UI when showing search results
+        properties_to_project = [
+            "id",
+            "description",
+            "name",
+            "type",
+            "text",
+            "source_file_path",  # File path for scroll positioning
+            "source_data_id",    # Source data UUID
+            "start_line",        # Starting line number
+            "end_line",          # Ending line number
+            "chunk_index",       # Chunk index in document
+            "page_number",       # Page number (for PDFs)
+            "start_char",        # Character offset start
+            "end_char",          # Character offset end
+        ]
 
     memory_fragment = CogneeGraph()
 
@@ -95,6 +118,9 @@ async def brute_force_triplet_search(
     memory_fragment: Optional[CogneeGraph] = None,
     node_type: Optional[Type] = None,
     node_name: Optional[List[str]] = None,
+    similarity_threshold: float = 0.5,
+    min_quality_score: float = 0.6,
+    ensure_diversity: bool = True,
 ) -> List[Edge]:
     """
     Performs a brute force search to retrieve the top triplets from the graph.
@@ -107,6 +133,14 @@ async def brute_force_triplet_search(
         memory_fragment (Optional[CogneeGraph]): Existing memory fragment to reuse.
         node_type: node type to filter
         node_name: node name to filter
+        similarity_threshold (float): Similarity threshold for filtering relevant edges.
+            Lower values mean stricter filtering. Default is 0.5.
+            Filtering logic:
+            - Edges where both nodes are below threshold are kept
+            - Edges where at least one node is highly relevant (< 0.3) and the other is moderately relevant (< 0.7) are kept
+            - Otherwise, edges are filtered out
+        min_quality_score (float): Minimum quality score for results (default 0.6).
+        ensure_diversity (bool): Whether to ensure result diversity (default True).
 
     Returns:
         list: The top triplet results.
@@ -170,7 +204,23 @@ async def brute_force_triplet_search(
             vector_engine=vector_engine, query_vector=query_vector, edge_distances=edge_distances
         )
 
-        results = await memory_fragment.calculate_top_triplet_importances(k=top_k)
+        results = await memory_fragment.calculate_top_triplet_importances(
+            k=top_k, similarity_threshold=similarity_threshold, query=query
+        )
+
+        # 应用质量评分和过滤
+        if results and min_quality_score > 0:
+            results = filter_low_quality_results(results, query, min_quality_score)
+        
+        # 确保结果多样性
+        if results and ensure_diversity:
+            results = ensure_result_diversity(results)
+        
+        # 如果结果数量超过top_k，只返回前top_k个
+        if len(results) > top_k:
+            # 重新排序以确保返回最高质量的结果
+            scored_results = rank_results_by_quality(results, query)
+            results = [edge for edge, _ in scored_results[:top_k]]
 
         return results
 

@@ -12,19 +12,33 @@ async def index_data_points(data_points: list[DataPoint]):
     index_points = {}
 
     vector_engine = get_vector_engine()
+    
+    # Log vector DB configuration for debugging
+    from cognee.infrastructure.databases.vector.config import get_vectordb_context_config
+    vector_config = get_vectordb_context_config()
+    logger.info(f"Vector indexing with config: provider={vector_config.get('vector_db_provider')}, url={vector_config.get('vector_db_url')}")
+    
+    logger.info(f"Starting vector indexing for {len(data_points)} data points")
+    logger.debug(f"Vector engine type: {type(vector_engine).__name__}")
 
     for data_point in data_points:
         data_point_type = type(data_point)
 
         for field_name in data_point.metadata["index_fields"]:
             if getattr(data_point, field_name, None) is None:
+                logger.debug(f"Skipping field {field_name} for {data_point_type.__name__} (value is None)")
                 continue
 
             index_name = f"{data_point_type.__name__}_{field_name}"
 
             if index_name not in created_indexes:
-                await vector_engine.create_vector_index(data_point_type.__name__, field_name)
-                created_indexes[index_name] = True
+                try:
+                    await vector_engine.create_vector_index(data_point_type.__name__, field_name)
+                    created_indexes[index_name] = True
+                    logger.debug(f"Created vector index: {index_name}")
+                except Exception as e:
+                    logger.error(f"Failed to create vector index {index_name}: {str(e)}", exc_info=True)
+                    raise
 
             if index_name not in index_points:
                 index_points[index_name] = []
@@ -35,21 +49,40 @@ async def index_data_points(data_points: list[DataPoint]):
 
     tasks: list[asyncio.Task] = []
     batch_size = vector_engine.embedding_engine.get_batch_size()
+    
+    logger.info(f"Preparing {len(index_points)} index types with batch size {batch_size}")
 
     for index_name_and_field, points in index_points.items():
         first = index_name_and_field.index("_")
         index_name = index_name_and_field[:first]
         field_name = index_name_and_field[first + 1 :]
+        
+        logger.debug(f"Indexing {len(points)} points for {index_name}.{field_name}")
 
         # Create embedding requests per batch to run in parallel later
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
             tasks.append(
-                asyncio.create_task(vector_engine.index_data_points(index_name, field_name, batch))
+                asyncio.create_task(
+                    vector_engine.index_data_points(index_name, field_name, batch)
+                )
             )
+    
+    logger.info(f"Starting {len(tasks)} vector indexing tasks")
 
-    # Run all embedding requests in parallel
-    await asyncio.gather(*tasks)
+    # Run all embedding requests in parallel with detailed error handling
+    try:
+        await asyncio.gather(*tasks)
+        logger.info(f"Vector indexing completed successfully for {len(data_points)} data points")
+    except Exception as e:
+        logger.error(f"Vector indexing failed: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(f"Failed during execution of {len(tasks)} indexing tasks")
+        
+        # Log which task types were being processed
+        logger.error(f"Index types being processed: {list(index_points.keys())}")
+        
+        # Re-raise to let upstream handle it
+        raise RuntimeError(f"Vector indexing failed for {len(data_points)} data points: {str(e)}") from e
 
     return data_points
 

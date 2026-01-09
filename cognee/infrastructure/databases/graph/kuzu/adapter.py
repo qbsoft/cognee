@@ -502,6 +502,32 @@ class KuzuAdapter(GraphDBInterface):
                     n.updated_at = timestamp(node.updated_at)
                 """
                 await self.query(merge_query, {"nodes": node_params})
+                
+                # 验证节点写入成功
+                logger.info(f"Attempting to add {len(node_params)} nodes to graph database")
+                
+                # 查询实际写入的节点数量
+                node_ids = [param["id"] for param in node_params]
+                verify_query = """
+                MATCH (n:Node)
+                WHERE n.id IN $node_ids
+                RETURN count(n) as node_count
+                """
+                verify_result = await self.query(verify_query, {"node_ids": node_ids})
+                
+                if verify_result and verify_result[0]:
+                    actual_count = verify_result[0][0]
+                    logger.info(f"Successfully verified {actual_count}/{len(node_params)} nodes in database after write operation")
+                    
+                    if actual_count == 0:
+                        logger.error(f"Node write verification failed: Expected to add {len(node_params)} nodes but found 0 in database")
+                        logger.error(f"Sample node ID: {node_ids[0] if node_ids else 'N/A'}")
+                        logger.error(f"Sample node type: {node_params[0]['type'] if node_params else 'N/A'}")
+                    elif actual_count < len(node_params):
+                        logger.warning(f"Partial node write: {actual_count}/{len(node_params)} nodes verified")
+                else:
+                    logger.warning("Could not verify node count after write")
+                
                 logger.debug(f"Processed {len(node_params)} nodes in batch")
 
         except Exception as e:
@@ -786,6 +812,29 @@ class KuzuAdapter(GraphDBInterface):
             """
 
             await self.query(query, {"edges": edge_params})
+            
+            # 验证边写入成功
+            logger.info(f"Attempting to add {len(edges)} edges to graph database")
+            
+            # 查询实际写入的边数量
+            verify_query = """
+            MATCH (from:Node)-[r:EDGE]->(to:Node)
+            WHERE r.relationship_name IN $relationship_names
+            RETURN count(r) as edge_count
+            """
+            relationship_names = list(set([rel_name for _, _, rel_name, _ in edges]))
+            verify_result = await self.query(verify_query, {"relationship_names": relationship_names})
+            
+            if verify_result and verify_result[0]:
+                actual_count = verify_result[0][0]
+                logger.info(f"Successfully verified {actual_count} edges in database after write operation")
+                
+                if actual_count == 0:
+                    logger.error(f"Edge write verification failed: Expected to add {len(edges)} edges but found 0 in database")
+                    logger.error(f"Relationship names: {relationship_names}")
+                    logger.error(f"Sample edge: {edges[0] if edges else 'N/A'}")
+            else:
+                logger.warning("Could not verify edge count after write")
 
         except Exception as e:
             logger.error(f"Failed to add edges in batch: {e}")

@@ -1,0 +1,39 @@
+# 通用
+.git/
+.venv/
+.env
+.env.local
+.env.*.local
+
+# Python 虚拟环境和缓存
+**/__pycache__/
+**/*.pyc
+**/.mypy_cache/
+**/.pytest_cache/
+
+# 前端依赖与构建产物
+cognee-frontend/node_modules/
+cognee-frontend/.next/
+cognee-frontend/.turbo/
+cognee-frontend/.vercel/
+
+# 日志与运行数据
+logs/
+data/
+tutorial_data/
+cognee/.cognee_system/
+cognee/.cache/
+
+# Docker / 部署相关（通常不需要深入索引）
+deployment/
+docker-compose.yml
+docker-compose copy.yml
+
+# 体积较大的锁文件
+poetry.lock
+uv.lock
+
+# 纯测试数据文件（代码仍保留索引）
+test_data.txt
+test_upload.txt
+test_方案1验证文件.txt

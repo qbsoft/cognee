@@ -27,16 +27,21 @@ async def get_notebooks(
         )
     )
     tutorial_result = await session.execute(tutorial_query)
-    tutorial_notebook = tutorial_result.scalar_one_or_none()
+    # Use first() instead of scalar_one_or_none() to handle duplicate tutorial notebooks
+    tutorial_notebook = tutorial_result.scalars().first()
 
     # If tutorial notebook doesn't exist, create it
     if tutorial_notebook is None:
         logger.info(f"Tutorial notebook not found for user {user_id}, creating it")
         try:
             await _create_tutorial_notebook(user_id, session, force_refresh=False)
+            # Refresh the session to get the newly created notebook
+            await session.commit()
         except Exception as e:
             # Log the error but continue to return existing notebooks
             logger.error(f"Failed to create tutorial notebook for user {user_id}: {e}")
+            # Rollback on error to avoid partial state
+            await session.rollback()
 
     # Get all notebooks for the user
     result = await session.execute(select(Notebook).where(Notebook.owner_id == user_id))

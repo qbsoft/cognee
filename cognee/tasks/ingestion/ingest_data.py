@@ -78,6 +78,9 @@ async def ingest_data(
         dataset_data_map = {str(data.id): True for data in dataset_data}
 
         for data_item in data:
+            # Extract original filename if available (from UploadFile)
+            original_filename = getattr(data_item, 'filename', None)
+            
             # Get file path of data item or create a file if it doesn't exist
             original_file_path = await save_data_item_to_storage(data_item)
             # Transform file path to be OS usable
@@ -95,7 +98,7 @@ async def ingest_data(
             # Find metadata from original file
             # Standard flow: extract metadata from both original and stored files
             async with open_data_file(original_file_path) as file:
-                classified_data = ingestion.classify(file)
+                classified_data = ingestion.classify(file, filename=original_filename)
 
                 # data_id is the hash of original file contents + owner id to avoid duplicate data
 

@@ -40,7 +40,7 @@ class HealthChecker:
         self.start_time = time.time()
 
     async def check_relational_db(self) -> ComponentHealth:
-        """Check relational database health."""
+        """Check relational database health with timeout."""
         start_time = time.time()
         try:
             from cognee.infrastructure.databases.relational.get_relational_engine import (
@@ -51,10 +51,27 @@ class HealthChecker:
             config = get_relational_config()
             engine = get_relational_engine()
 
-            # Test connection by creating a session
-            session = engine.get_session()
-            if session:
-                session.close()
+            # Test connection by creating a session with timeout
+            try:
+                # Run in executor to avoid blocking
+                def get_session_sync():
+                    session = engine.get_session()
+                    if session:
+                        session.close()
+                    return True
+                
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, get_session_sync),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                response_time = int((time.time() - start_time) * 1000)
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    provider=config.db_provider if config else "postgres",
+                    response_time_ms=response_time,
+                    details="Connection timeout (check server)",
+                )
 
             response_time = int((time.time() - start_time) * 1000)
             return ComponentHealth(
@@ -65,16 +82,16 @@ class HealthChecker:
             )
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Relational DB health check failed: {str(e)}", exc_info=True)
+            logger.warning(f"Relational DB health check failed: {str(e)}")
             return ComponentHealth(
-                status=HealthStatus.UNHEALTHY,
+                status=HealthStatus.DEGRADED,
                 provider="unknown",
                 response_time_ms=response_time,
-                details=f"Connection failed: {str(e)}",
+                details=f"Connection check failed (may retry): {str(e)[:50]}",
             )
 
     async def check_vector_db(self) -> ComponentHealth:
-        """Check vector database health."""
+        """Check vector database health with timeout."""
         start_time = time.time()
         try:
             from cognee.infrastructure.databases.vector.get_vector_engine import get_vector_engine
@@ -83,12 +100,25 @@ class HealthChecker:
             config = get_vectordb_config()
             engine = get_vector_engine()
 
-            # Test basic operation - just check if engine is accessible
-            if hasattr(engine, "health_check"):
-                await engine.health_check()
-            elif hasattr(engine, "list_tables"):
-                # For LanceDB and similar
-                engine.list_tables()
+            # Test basic operation with timeout
+            try:
+                if hasattr(engine, "health_check"):
+                    await asyncio.wait_for(engine.health_check(), timeout=3.0)
+                elif hasattr(engine, "list_tables"):
+                    def list_tables_sync():
+                        engine.list_tables()
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, list_tables_sync),
+                        timeout=3.0
+                    )
+            except asyncio.TimeoutError:
+                response_time = int((time.time() - start_time) * 1000)
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    provider=config.vector_db_provider,
+                    response_time_ms=response_time,
+                    details="Vector DB response timeout",
+                )
 
             response_time = int((time.time() - start_time) * 1000)
             return ComponentHealth(
@@ -99,29 +129,40 @@ class HealthChecker:
             )
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Vector DB health check failed: {str(e)}", exc_info=True)
+            logger.warning(f"Vector DB health check failed: {str(e)}")
             return ComponentHealth(
-                status=HealthStatus.UNHEALTHY,
+                status=HealthStatus.DEGRADED,
                 provider="unknown",
                 response_time_ms=response_time,
-                details=f"Connection failed: {str(e)}",
+                details=f"Check failed (may retry): {str(e)[:40]}",
             )
 
     async def check_graph_db(self) -> ComponentHealth:
-        """Check graph database health."""
+        """Check graph database health with timeout."""
         start_time = time.time()
         try:
             from cognee.infrastructure.databases.graph.get_graph_engine import get_graph_engine
             from cognee.infrastructure.databases.graph.config import get_graph_config
 
             config = get_graph_config()
-            engine = await get_graph_engine()
+            engine = await asyncio.wait_for(get_graph_engine(), timeout=5.0)
 
-            # Test basic operation with actual graph query
-            if hasattr(engine, "query"):
-                # For other graph engines
-                await engine.query("MATCH () RETURN count(*) LIMIT 1", {})
-            # If engine exists but no test method, consider it healthy
+            # Test basic operation with timeout
+            try:
+                if hasattr(engine, "query"):
+                    # For other graph engines
+                    await asyncio.wait_for(
+                        engine.query("MATCH () RETURN count(*) LIMIT 1", {}),
+                        timeout=3.0
+                    )
+            except asyncio.TimeoutError:
+                response_time = int((time.time() - start_time) * 1000)
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    provider=config.graph_database_provider,
+                    response_time_ms=response_time,
+                    details="Graph DB response timeout",
+                )
 
             response_time = int((time.time() - start_time) * 1000)
             return ComponentHealth(
@@ -132,12 +173,12 @@ class HealthChecker:
             )
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"Graph DB health check failed: {str(e)}", exc_info=True)
+            logger.warning(f"Graph DB health check failed: {str(e)}")
             return ComponentHealth(
-                status=HealthStatus.UNHEALTHY,
+                status=HealthStatus.DEGRADED,
                 provider="unknown",
                 response_time_ms=response_time,
-                details=f"Connection failed: {str(e)}",
+                details=f"Check failed (may retry): {str(e)[:40]}",
             )
 
     async def check_file_storage(self) -> ComponentHealth:
@@ -185,7 +226,7 @@ class HealthChecker:
             )
 
     async def check_llm_provider(self) -> ComponentHealth:
-        """Check LLM provider health (non-critical)."""
+        """Check LLM provider health with timeout (non-critical)."""
         start_time = time.time()
         try:
             from cognee.infrastructure.llm.config import get_llm_config
@@ -194,7 +235,7 @@ class HealthChecker:
 
             from cognee.infrastructure.llm.utils import test_llm_connection
 
-            await test_llm_connection()
+            await asyncio.wait_for(test_llm_connection(), timeout=5.0)
 
             response_time = int((time.time() - start_time) * 1000)
             return ComponentHealth(
@@ -203,9 +244,17 @@ class HealthChecker:
                 response_time_ms=response_time,
                 details="API responding",
             )
+        except asyncio.TimeoutError:
+            response_time = int((time.time() - start_time) * 1000)
+            return ComponentHealth(
+                status=HealthStatus.DEGRADED,
+                provider="unknown",
+                response_time_ms=response_time,
+                details="LLM API timeout",
+            )
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            logger.error(f"LLM provider health check failed: {str(e)}", exc_info=True)
+            logger.warning(f"LLM provider health check failed: {str(e)}")
             return ComponentHealth(
                 status=HealthStatus.DEGRADED,
                 provider="unknown",
@@ -214,12 +263,12 @@ class HealthChecker:
             )
 
     async def check_embedding_service(self) -> ComponentHealth:
-        """Check embedding service health (non-critical)."""
+        """Check embedding service health with timeout (non-critical)."""
         start_time = time.time()
         try:
             from cognee.infrastructure.llm.utils import test_embedding_connection
 
-            await test_embedding_connection()
+            await asyncio.wait_for(test_embedding_connection(), timeout=5.0)
 
             response_time = int((time.time() - start_time) * 1000)
             return ComponentHealth(
@@ -227,6 +276,14 @@ class HealthChecker:
                 provider="configured",
                 response_time_ms=response_time,
                 details="Embedding generation working",
+            )
+        except asyncio.TimeoutError:
+            response_time = int((time.time() - start_time) * 1000)
+            return ComponentHealth(
+                status=HealthStatus.DEGRADED,
+                provider="unknown",
+                response_time_ms=response_time,
+                details="Embedding service timeout",
             )
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)

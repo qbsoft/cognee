@@ -17,6 +17,12 @@ from cognee.modules.graph.utils import (
     expand_with_nodes_and_edges,
     retrieve_existing_edges,
 )
+from cognee.modules.graph.utils.entity_quality_scorer import (
+    filter_low_quality_entities,
+)
+from cognee.shared.logging_utils import get_logger
+
+logger = get_logger("extract_graph_from_data")
 from cognee.shared.data_models import KnowledgeGraph
 from cognee.infrastructure.llm.extraction import extract_content_graph
 from cognee.tasks.graph.exceptions import (
@@ -32,6 +38,7 @@ async def integrate_chunk_graphs(
     chunk_graphs: list,
     graph_model: Type[BaseModel],
     ontology_resolver: BaseOntologyResolver,
+    min_entity_quality_score: float = 0.5,
 ) -> List[DocumentChunk]:
     """Integrate chunk graphs with ontology validation and store in databases.
 
@@ -83,6 +90,30 @@ async def integrate_chunk_graphs(
     graph_nodes, graph_edges = expand_with_nodes_and_edges(
         data_chunks, chunk_graphs, ontology_resolver, existing_edges_map
     )
+
+    # 过滤低质量实体（如果启用了质量过滤）
+    if min_entity_quality_score > 0:
+        # 从graph_nodes中提取Entity对象
+        entities_to_filter = []
+        other_nodes = []
+        for node in graph_nodes:
+            from cognee.modules.engine.models import Entity
+            if isinstance(node, Entity):
+                entities_to_filter.append(node)
+            else:
+                other_nodes.append(node)
+        
+        if entities_to_filter:
+            filtered_entities = filter_low_quality_entities(
+                entities_to_filter,
+                min_score=min_entity_quality_score,
+            )
+            graph_nodes = other_nodes + filtered_entities
+            logger.info(
+                f"质量过滤: 原始实体数 {len(entities_to_filter)}, "
+                f"过滤后实体数 {len(filtered_entities)} "
+                f"(阈值: {min_entity_quality_score})"
+            )
 
     if len(graph_nodes) > 0:
         await add_data_points(graph_nodes)

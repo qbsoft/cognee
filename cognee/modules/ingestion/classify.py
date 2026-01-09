@@ -12,7 +12,10 @@ def classify(data: Union[str, BinaryIO], filename: str = None):
         return TextData(data)
 
     if isinstance(data, BufferedReader) or isinstance(data, SpooledTemporaryFile):
-        return BinaryData(data, filename if filename else str(data.name).split("/")[-1])
+        # Prioritize provided filename over temporary file name
+        # Use filename if provided, otherwise fallback to data.name
+        actual_filename = filename if filename else str(data.name).split("/")[-1]
+        return BinaryData(data, actual_filename)
 
     try:
         from s3fs import S3File

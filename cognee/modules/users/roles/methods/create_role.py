@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, text
 
 from cognee.infrastructure.databases.exceptions import EntityAlreadyExistsError
 from cognee.infrastructure.databases.relational import get_relational_engine
@@ -31,9 +32,26 @@ async def create_role(
         user = await get_user(owner_id)
         tenant = await get_tenant(user.tenant_id)
 
-        if owner_id != tenant.owner_id:
+        # 检查权限：用户必须是租户 owner 或拥有"管理员"角色
+        is_owner = (owner_id == tenant.owner_id)
+        
+        # 检查用户是否拥有"管理员"角色
+        result = await session.execute(text("""
+            SELECT COUNT(*) as count
+            FROM user_roles ur
+            JOIN roles r ON ur.role_id = r.id
+            WHERE ur.user_id = :user_id 
+            AND r.name = '管理员'
+            AND r.tenant_id = :tenant_id
+        """), {"user_id": owner_id, "tenant_id": tenant.id})
+        
+        row = result.fetchone()
+        has_admin_role = row.count > 0 if row else False
+        
+        if not is_owner and not has_admin_role:
             raise PermissionDeniedError(
-                "User submitting request does not have permission to create role for tenant."
+                "User submitting request does not have permission to create role for tenant. "
+                "User must be tenant owner or have '管理员' role."
             )
 
         try:

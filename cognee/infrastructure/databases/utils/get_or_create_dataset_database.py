@@ -64,5 +64,22 @@ async def get_or_create_dataset_database(
             return record
 
         except IntegrityError:
+            # Record already exists (race condition or duplicate call)
+            # Rollback and fetch the existing record
             await session.rollback()
-            raise
+
+    # Re-fetch in a fresh session to avoid detached instance errors
+    async with db_engine.get_async_session() as session:
+        stmt = select(DatasetDatabase).where(
+            DatasetDatabase.owner_id == user.id,
+            DatasetDatabase.dataset_id == dataset_id,
+        )
+        existing = await session.scalar(stmt)
+        if existing:
+            return existing
+        
+        # If still not found, something is wrong
+        raise RuntimeError(
+            f"Failed to create or fetch DatasetDatabase for dataset_id={dataset_id}, "
+            f"user_id={user.id} after handling IntegrityError"
+        )

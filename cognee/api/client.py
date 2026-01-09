@@ -1,5 +1,6 @@
 """FastAPI server for the Cognee API."""
 
+import asyncio
 import os
 
 import uvicorn
@@ -29,6 +30,7 @@ from cognee.api.v1.delete.routers import get_delete_router
 from cognee.api.v1.responses.routers import get_responses_router
 from cognee.api.v1.sync.routers import get_sync_router
 from cognee.api.v1.update.routers import get_update_router
+from cognee.api.v1.api_keys.routers import get_api_keys_router
 from cognee.api.v1.users.routers import (
     get_auth_router,
     get_register_router,
@@ -72,7 +74,10 @@ async def lifespan(app: FastAPI):
 
     from cognee.modules.users.methods import get_default_user
 
-    await get_default_user()
+    try:
+        await get_default_user()
+    except Exception as e:
+        logger.warning(f"Failed to get/create default user: {e}. This may be retried on first API call.")
 
     yield
 
@@ -86,16 +91,25 @@ if CORS_ALLOWED_ORIGINS:
     allowed_origins = [
         origin.strip() for origin in CORS_ALLOWED_ORIGINS.split(",") if origin.strip()
     ]
+    # Ensure no wildcard when credentials are enabled
+    if "*" in allowed_origins and os.getenv("ENV", "prod") != "prod":
+        logger.warning("Wildcard CORS origin detected. Removing '*' as it's incompatible with credentials.")
+        allowed_origins = [origin for origin in allowed_origins if origin != "*"]
+        if not allowed_origins:
+            allowed_origins = ["http://localhost:3000"]
 else:
+    # Default to port 3000 for local development
     allowed_origins = [
-        os.getenv("UI_APP_URL", "http://localhost:3000"),
-    ]  # Block all except explicitly set origins
+        "http://localhost:3000",
+    ]
+
+logger.info(f"CORS allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,  # Now controlled by env var
-    allow_credentials=True,
-    allow_methods=["OPTIONS", "GET", "PUT", "POST", "DELETE"],
+    allow_origins=allowed_origins,  # Now controlled by env var - must be specific origins, not '*'
+    allow_credentials=True,  # When True, allow_origins cannot be ['*']
+    allow_methods=["OPTIONS", "GET", "PUT", "POST", "DELETE", "PATCH"],
     allow_headers=["*"],
 )
 # To allow origins, set CORS_ALLOWED_ORIGINS env variable to a comma-separated list, e.g.:
@@ -180,24 +194,28 @@ async def root():
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint for liveness/readiness probes.
+    Health check endpoint for liveness/readiness probes with timeout.
     """
     try:
-        health_status = await health_checker.get_health_status(detailed=False)
+        health_status = await asyncio.wait_for(
+            health_checker.get_health_status(detailed=False),
+            timeout=15.0  # Overall timeout for all checks
+        )
         status_code = 503 if health_status.status == HealthStatus.UNHEALTHY else 200
 
         return JSONResponse(
             status_code=status_code,
-            content={
-                "status": "ready" if status_code == 200 else "not ready",
-                "health": health_status.status,
-                "version": health_status.version,
-            },
+            content=health_status.model_dump(),
+        )
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "error": "Health check timeout - services may be initializing"},
         )
     except Exception as e:
         return JSONResponse(
             status_code=503,
-            content={"status": "not ready", "reason": f"health check failed: {str(e)}"},
+            content={"status": "unhealthy", "error": f"Health check system failure: {str(e)}"},
         )
 
 
@@ -224,6 +242,21 @@ async def detailed_health_check():
 
 app.include_router(get_auth_router(), prefix="/api/v1/auth", tags=["auth"])
 
+# Add explicit OPTIONS handler for all auth endpoints to fix CORS preflight
+@app.options("/api/v1/auth/{path:path}")
+async def auth_options_handler(path: str):
+    """Handle OPTIONS requests for auth endpoints (CORS preflight)."""
+    return {}
+
+# 自定义注册路由(支持租户编码和邀请令牌)
+from cognee.api.v1.auth.register_router import get_extended_register_router
+app.include_router(
+    get_extended_register_router(),
+    prefix="/api/v1/auth",
+    tags=["auth"],
+)
+
+# FastAPI Users 默认注册路由（保留以兼容旧客户端）
 app.include_router(
     get_register_router(),
     prefix="/api/v1/auth",
@@ -290,6 +323,12 @@ app.include_router(
     get_checks_router(),
     prefix="/api/v1/checks",
     tags=["checks"],
+)
+
+app.include_router(
+    get_api_keys_router(),
+    prefix="/api/v1/api-keys",
+    tags=["api-keys"],
 )
 
 

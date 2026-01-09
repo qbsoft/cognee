@@ -97,14 +97,17 @@ export default function Dashboard({ accessToken }: DashboardProps) {
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const refreshDatasetsRef = useRef(() => {});
+  const getDatasetDataRef = useRef<((datasetId: string) => Promise<any>) | undefined>();
 
-  const handleDatasetsChange = useCallback((payload: { datasets: Dataset[], refreshDatasets: () => void }) => {
+  const handleDatasetsChange = useCallback((payload: { datasets: Dataset[], refreshDatasets: () => void, getDatasetData: (datasetId: string) => Promise<any> }) => {
     const {
       datasets,
       refreshDatasets,
+      getDatasetData,
     } = payload;
 
     refreshDatasetsRef.current = refreshDatasets;
+    getDatasetDataRef.current = getDatasetData;
     setDatasets(datasets);
   }, []);
 
@@ -135,6 +138,7 @@ export default function Dashboard({ accessToken }: DashboardProps) {
           <AddDataToCognee
             datasets={datasets}
             refreshDatasets={refreshDatasetsRef.current}
+            getDatasetData={getDatasetDataRef.current}
             useCloud={isCloudEnv}
           />
 

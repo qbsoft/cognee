@@ -18,8 +18,10 @@ def get_client_auth_backend():
         from .default.default_jwt_strategy import DefaultJWTStrategy
 
         secret = os.getenv("FASTAPI_USERS_JWT_SECRET", "super_secret")
+        # JWT 有效期：24小时，与 Cookie 有效期同步
+        lifetime_seconds = int(os.getenv("JWT_LIFETIME_SECONDS", "86400"))  # 24h
 
-        return DefaultJWTStrategy(secret, lifetime_seconds=3600)
+        return DefaultJWTStrategy(secret, lifetime_seconds=lifetime_seconds)
 
     auth_backend = AuthenticationBackend(
         name=transport.name,

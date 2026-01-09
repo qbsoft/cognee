@@ -1,10 +1,12 @@
 from .supported_databases import supported_databases
 from .embeddings import get_embedding_engine
 
-from functools import lru_cache
 
-
-@lru_cache
+# NOTE: Do NOT use @lru_cache here!
+# The vector engine must be recreated when the database context changes
+# (e.g., when switching between datasets in multi-tenant mode).
+# Using @lru_cache would cache the engine with the first URL and ignore
+# subsequent context changes, causing vectors to be written to the wrong database.
 def create_vector_engine(
     vector_db_provider: str,
     vector_db_url: str,

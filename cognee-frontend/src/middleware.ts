@@ -13,6 +13,28 @@ export async function middleware(request: NextRequest) {
   //   return response;
   // }
 
+  // Check authentication for protected routes
+  const protectedRoutes = ['/dashboard', '/account', '/plan', '/(graph)', '/admin', '/tenant-admin'];
+  const isProtectedRoute = protectedRoutes.some(route => 
+    request.nextUrl.pathname.startsWith(route)
+  );
+  
+  // If accessing protected route and not on auth pages
+  if (isProtectedRoute && !request.nextUrl.pathname.startsWith('/auth')) {
+    // Check if user has auth cookie
+    const authCookie = request.cookies.get('auth_token');
+    
+    // If no auth cookie, redirect to login
+    // Note: We only check cookie existence here. The actual validation
+    // happens client-side through API calls to /api/v1/auth/me
+    // which will trigger a redirect in handleServerErrors.ts if the cookie is invalid
+    if (!authCookie) {
+      const loginUrl = new URL('/auth/login', request.url);
+      loginUrl.searchParams.set('redirect', request.nextUrl.pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   return NextResponse.next();
 }
 

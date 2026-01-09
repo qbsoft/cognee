@@ -3,11 +3,12 @@ import re
 import json
 import uuid
 from typing import Optional
-from fastapi import Depends, Request, Response
+from fastapi import Depends, Request, Response, HTTPException, status
 from fastapi_users.exceptions import UserNotExists
 from fastapi_users import BaseUserManager, UUIDIDMixin
 from fastapi_users.db import SQLAlchemyUserDatabase
 from contextlib import asynccontextmanager
+from sqlalchemy import select
 
 from .models import User
 from .get_user_db import get_user_db
@@ -59,7 +60,26 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             response.headers.append("Content-Type", "application/json")
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
+        """
+        用户注册后的钩子函数
+        
+        处理：
+        1. 如果使用了邀请令牌，标记为已使用
+        2. 根据租户编码或邀请令牌将用户加入租户
+        3. 将用户分配为 "普通用户" 角色
+        """
         print(f"User {user.id} has registered.")
+        
+        # 如果有 tenant_id，说明已经分配好了，不需要处理
+        if user.tenant_id:
+            return
+        
+        # 从请求中获取租户编码或邀请令牌（如果有）
+        # 注：这些字段已经在 UserCreate 中定义，但不会被保存到数据库
+        # 我们需要从 request body 中手动提取并处理
+        
+        # TODO: 如果需要，这里可以处理租户分配逻辑
+        # 但由于 FastAPI Users 的限制，我们会在自定义的注册端点中处理
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None

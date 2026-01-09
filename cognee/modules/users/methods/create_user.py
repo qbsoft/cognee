@@ -31,11 +31,17 @@ async def create_user(
             async with get_user_db_context(session) as user_db:
                 async with get_user_manager_context(user_db) as user_manager:
                     if tenant_id:
+                        # 将字符串转换为 UUID
+                        try:
+                            tenant_uuid = UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
+                        except ValueError as e:
+                            raise ValueError(f"Invalid tenant_id format: {tenant_id}") from e
+                        
                         # Check if the tenant already exists
-                        result = await session.execute(select(Tenant).where(Tenant.id == tenant_id))
+                        result = await session.execute(select(Tenant).where(Tenant.id == tenant_uuid))
                         tenant = result.scalars().first()
                         if not tenant:
-                            raise TenantNotFoundError
+                            raise TenantNotFoundError(message=f"Tenant {tenant_id} not found")
 
                         user = await user_manager.create(
                             UserCreate(
@@ -65,3 +71,6 @@ async def create_user(
     except UserAlreadyExists as error:
         print(f"User {email} already exists")
         raise error
+    except Exception as e:
+        print(f"Error creating user {email}: {str(e)}")
+        raise e

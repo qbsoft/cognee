@@ -1,7 +1,7 @@
 from typing import List, cast
 from uuid import uuid5, NAMESPACE_OID
 
-from cognee.modules.graph.utils import resolve_edges_to_text
+from cognee.modules.graph.utils import resolve_edges_to_text, resolve_edges_to_context
 from cognee.modules.graph.cognee_graph.CogneeGraphElements import Edge
 from cognee.modules.search.types.SearchResult import SearchResultDataset
 from cognee.modules.search.utils.transform_context_to_graph import transform_context_to_graph
@@ -40,8 +40,9 @@ async def prepare_search_result(search_result):
         graphs = {
             ", ".join([dataset.name for dataset in datasets]): context_graph,
         }
+        # Use structured context with source tracing information
         context_texts = {
-            ", ".join([dataset.name for dataset in datasets]): await resolve_edges_to_text(context),
+            ", ".join([dataset.name for dataset in datasets]): await resolve_edges_to_context(context),
         }
     elif isinstance(context, str):
         context_texts = {

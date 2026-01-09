@@ -5,6 +5,9 @@ let numberOfRetries = 0;
 
 const isAuth0Enabled = process.env.USE_AUTH0_AUTHORIZATION?.toLowerCase() === "true";
 
+// Temporarily use direct backend URL in development to avoid proxy issues
+// TODO: Fix Next.js proxy configuration for POST requests
+const isDevelopment = process.env.NODE_ENV === 'development';
 const backendApiUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000";
 
 const cloudApiUrl = process.env.NEXT_PUBLIC_CLOUD_API_URL || "http://localhost:8001";
@@ -38,29 +41,46 @@ export default async function fetch(url: string, options: RequestInit = {}, useC
     "Authorization": `Bearer ${accessToken}`,
   }
 
+  // Use Next.js proxy in development, direct URL only for cloud requests
+  const fullUrl = useCloud 
+    ? cloudApiUrl + "/api" + url.replace("/v1", "")
+    : "/api" + url;  // Use relative path to go through Next.js proxy
+  
   return global.fetch(
-    (useCloud ? cloudApiUrl : backendApiUrl) + "/api" + (useCloud ? url.replace("/v1", "") : url),
+    fullUrl,
     {
       ...options,
       headers: {
         ...options.headers,
         ...authHeaders,
       } as HeadersInit,
-      credentials: "include",
+      credentials: "include", // Always include credentials for cookies
     },
   )
     .then((response) => handleServerErrors(response, retry, useCloud))
     .catch((error) => {
       // Handle network errors more gracefully
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        console.error('[Fetch Error] Network error:', error);
         return Promise.reject(
           new Error("Backend server is not responding. Please check if the server is running.")
         );
       }
       
+      // Log detailed error information
+      const errorUrl = useCloud 
+        ? cloudApiUrl + "/api" + url.replace("/v1", "")
+        : `/api${url}`;  // Show proxy path
+      console.error('[Fetch Error] Request failed:', {
+        url: errorUrl,
+        error,
+        hasDetail: error.detail !== undefined,
+        errorType: typeof error,
+      });
+      
       if (error.detail === undefined) {
         return Promise.reject(
-          new Error("No connection to the server.")
+          new Error(`No connection to the server. Error: ${error.message || JSON.stringify(error)}`)
         );
       }
 
@@ -75,9 +95,14 @@ fetch.checkHealth = async () => {
   const maxRetries = 5;
   const retryDelay = 1000; // 1 second
   
+  // In development, use Next.js proxy; in production, use full URL
+  const healthUrl = isDevelopment 
+    ? "/health"  // Use Next.js proxy
+    : `${backendApiUrl.replace("/api", "")}/health`;
+  
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await global.fetch(`${backendApiUrl.replace("/api", "")}/health`);
+      const response = await global.fetch(healthUrl);
       if (response.ok) {
         return response;
       }
@@ -95,6 +120,14 @@ fetch.checkHealth = async () => {
 };
 
 fetch.checkMCPHealth = () => {
+  // In development, MCP server may not be running, so skip the check
+  // to avoid connection refused errors in the console
+  if (isDevelopment) {
+    // Return a rejected promise that will be caught by the caller
+    return Promise.reject(new Error("MCP server check skipped in development"));
+  }
+  
+  // In production, try to connect to MCP server
   return global.fetch(`${mcpApiUrl.replace("/api", "")}/health`);
 };
 

@@ -40,6 +40,11 @@ async def index_graph_edges(
         index_points = {}
 
         vector_engine = get_vector_engine()
+        
+        # Log vector DB configuration for debugging
+        from cognee.infrastructure.databases.vector.config import get_vectordb_context_config
+        vector_config = get_vectordb_context_config()
+        logger.info(f"Edge indexing with config: provider={vector_config.get('vector_db_provider')}, url={vector_config.get('vector_db_url')}")
 
         if edges_data is None:
             graph_engine = await get_graph_engine()
@@ -57,6 +62,9 @@ async def index_graph_edges(
         for item in edge
         if isinstance(item, dict) and "relationship_name" in item
     )
+    
+    logger.info(f"Indexing {len(edge_types)} unique edge types from {len(edges_data)} edges")
+    logger.debug(f"Edge types: {list(edge_types.keys())}")
 
     for text, count in edge_types.items():
         edge = EdgeType(
@@ -68,8 +76,13 @@ async def index_graph_edges(
             index_name = f"{data_point_type.__name__}.{field_name}"
 
             if index_name not in created_indexes:
-                await vector_engine.create_vector_index(data_point_type.__name__, field_name)
-                created_indexes[index_name] = True
+                try:
+                    await vector_engine.create_vector_index(data_point_type.__name__, field_name)
+                    created_indexes[index_name] = True
+                    logger.debug(f"Created edge vector index: {index_name}")
+                except Exception as e:
+                    logger.error(f"Failed to create edge vector index {index_name}: {str(e)}", exc_info=True)
+                    raise
 
             if index_name not in index_points:
                 index_points[index_name] = []
@@ -81,6 +94,8 @@ async def index_graph_edges(
     # Get maximum batch size for embedding model
     batch_size = vector_engine.embedding_engine.get_batch_size()
     tasks: list[asyncio.Task] = []
+    
+    logger.info(f"Preparing edge indexing with batch size {batch_size}")
 
     for index_name, indexable_points in index_points.items():
         index_name, field_name = index_name.split(".")
@@ -89,9 +104,22 @@ async def index_graph_edges(
         for start in range(0, len(indexable_points), batch_size):
             batch = indexable_points[start : start + batch_size]
 
-            tasks.append(vector_engine.index_data_points(index_name, field_name, batch))
+            tasks.append(
+                asyncio.create_task(
+                    vector_engine.index_data_points(index_name, field_name, batch)
+                )
+            )
+    
+    logger.info(f"Starting {len(tasks)} edge indexing tasks")
 
-    # Start all embedding tasks and wait for completion
-    await asyncio.gather(*tasks)
+    # Start all embedding tasks and wait for completion with error handling
+    try:
+        await asyncio.gather(*tasks)
+        logger.info(f"Edge indexing completed successfully for {len(edge_types)} edge types")
+    except Exception as e:
+        logger.error(f"Edge indexing failed: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(f"Failed during execution of {len(tasks)} edge indexing tasks")
+        logger.error(f"Edge types being processed: {list(edge_types.keys())}")
+        raise RuntimeError(f"Edge indexing failed for {len(edge_types)} edge types: {str(e)}") from e
 
     return None

@@ -8,3 +8,4 @@ from .get_authenticated_user import (
     get_authenticated_user,
     REQUIRE_AUTHENTICATION,
 )
+from .get_user_from_api_key import get_user_from_api_key, require_api_key

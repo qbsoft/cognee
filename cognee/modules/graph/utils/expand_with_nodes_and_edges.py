@@ -15,6 +15,21 @@ from cognee.modules.ontology.get_default_ontology_resolver import (
     get_default_ontology_resolver,
     get_ontology_resolver_from_env,
 )
+from cognee.modules.graph.utils.entity_normalization import (
+    normalize_entity_name,
+    find_similar_entities,
+    merge_entity_attributes,
+)
+from cognee.modules.graph.utils.entity_quality_scorer import (
+    calculate_entity_quality_score,
+)
+from cognee.modules.graph.utils.relationship_validator import (
+    validate_relationship,
+    filter_invalid_relationships,
+)
+from cognee.shared.logging_utils import get_logger
+
+logger = get_logger("expand_with_nodes_and_edges")
 
 
 def _create_node_key(node_id: str, category: str) -> str:
@@ -156,15 +171,68 @@ def _create_entity_node(
     existing_edges_map: dict,
     ontology_relationships: list,
 ) -> Entity:
-    """Create or retrieve an entity node with ontology validation"""
+    """Create or retrieve an entity node with ontology validation and quality checks"""
+    # 规范化实体名称
+    normalized_name = normalize_entity_name(node_name) if node_name else ""
+    
+    # 如果名称为空，尝试从描述中提取
+    if not normalized_name and node_description:
+        # 简单提取：取描述的前几个词作为名称
+        desc_words = str(node_description).strip().split()[:3]
+        if desc_words:
+            normalized_name = " ".join(desc_words)
+            logger.warning(
+                f"实体名称为空，从描述中提取: '{normalized_name}' (原始ID: {node_id})"
+            )
+    
+    # 如果仍然为空，生成默认名称
+    if not normalized_name:
+        normalized_name = f"{type_node.name if type_node else 'Entity'}_{str(node_id)[:8]}"
+        logger.warning(
+            f"实体名称为空，生成默认名称: '{normalized_name}' (原始ID: {node_id})"
+        )
+    
     generated_node_id = generate_node_id(node_id)
-    generated_node_name = generate_node_name(node_name)
+    generated_node_name = generate_node_name(normalized_name)
     entity_node_key = _create_node_key(generated_node_id, "entity")
 
+    # 检查是否已存在（基于ID）
     if entity_node_key in added_nodes_map or entity_node_key in key_mapping:
         return added_nodes_map.get(entity_node_key) or added_nodes_map.get(
             key_mapping.get(entity_node_key)
         )
+
+    # 检查是否存在相似实体（基于名称相似度）
+    existing_entities = list(added_nodes_map.values()) + list(added_ontology_nodes_map.values())
+    similar_entity = find_similar_entities(
+        normalized_name,
+        [e for e in existing_entities if isinstance(e, Entity)],
+        threshold=0.85,
+    )
+    
+    if similar_entity:
+        # 找到相似实体，合并而不是创建新实体
+        logger.info(
+            f"找到相似实体，合并: '{normalized_name}' -> '{similar_entity.name}'"
+        )
+        # 合并属性
+        merged_entity = merge_entity_attributes(
+            Entity(
+                id=generated_node_id,
+                name=generated_node_name,
+                is_a=type_node,
+                description=node_description,
+                ontology_valid=False,
+                belongs_to_set=data_chunk.belongs_to_set,
+            ),
+            similar_entity,
+        )
+        # 更新名称映射
+        name_mapping[generated_node_name] = similar_entity.name
+        # 更新key映射
+        similar_entity_key = _create_node_key(str(similar_entity.id), "entity")
+        key_mapping[entity_node_key] = similar_entity_key
+        return merged_entity
 
     # Get ontology validation
     ontology_nodes, ontology_edges, start_ent_ont = ontology_resolver.get_subgraph(
@@ -191,6 +259,17 @@ def _create_entity_node(
         ontology_valid=ontology_validated,
         belongs_to_set=data_chunk.belongs_to_set,
     )
+
+    # 计算质量分数
+    quality_score = calculate_entity_quality_score(entity_node)
+    # 将质量分数存储在实体属性中（通过动态属性）
+    if hasattr(entity_node, '__dict__'):
+        entity_node.__dict__['quality_score'] = quality_score
+    
+    if quality_score < 0.5:
+        logger.warning(
+            f"低质量实体: '{generated_node_name}' (质量分数: {quality_score:.2f})"
+        )
 
     added_nodes_map[entity_node_key] = entity_node
 
@@ -250,9 +329,16 @@ def _process_graph_nodes(
 
 
 def _process_graph_edges(
-    graph: KnowledgeGraph, name_mapping: dict, existing_edges_map: dict, relationships: list
+    graph: KnowledgeGraph,
+    name_mapping: dict,
+    existing_edges_map: dict,
+    relationships: list,
+    added_nodes_map: dict = None,
 ) -> None:
-    """Process edges in a knowledge graph"""
+    """Process edges in a knowledge graph with relationship validation"""
+    if added_nodes_map is None:
+        added_nodes_map = {}
+    
     for edge in graph.edges:
         # Apply name mapping if exists
         source_id = name_mapping.get(edge.source_node_id, edge.source_node_id)
@@ -262,6 +348,42 @@ def _process_graph_edges(
         target_node_id = generate_node_id(target_id)
         relationship_name = generate_edge_name(edge.relationship_name)
         edge_key = _create_edge_key(source_node_id, target_node_id, relationship_name)
+
+        # 验证关系合理性
+        # 尝试从added_nodes_map中获取节点类型
+        source_type = "unknown"
+        target_type = "unknown"
+        
+        # 查找源节点类型
+        for key, node in added_nodes_map.items():
+            if hasattr(node, 'id') and str(node.id) == str(source_node_id):
+                if hasattr(node, 'is_a') and node.is_a:
+                    source_type = getattr(node.is_a, 'name', 'unknown') or getattr(node.is_a, 'type', 'unknown')
+                break
+        
+        # 查找目标节点类型
+        for key, node in added_nodes_map.items():
+            if hasattr(node, 'id') and str(node.id) == str(target_node_id):
+                if hasattr(node, 'is_a') and node.is_a:
+                    target_type = getattr(node.is_a, 'name', 'unknown') or getattr(node.is_a, 'type', 'unknown')
+                break
+        
+        # 验证关系
+        is_valid, error_msg = validate_relationship(
+            source_type=source_type,
+            relationship=relationship_name,
+            target_type=target_type,
+            existing_relationships=existing_edges_map,
+            source_id=str(source_node_id),
+            target_id=str(target_node_id),
+        )
+        
+        if not is_valid:
+            logger.warning(
+                f"跳过无效关系: {source_node_id} --[{relationship_name}]--> {target_node_id}. "
+                f"原因: {error_msg}"
+            )
+            continue
 
         if edge_key not in existing_edges_map:
             relationships.append(
@@ -362,7 +484,9 @@ def expand_with_nodes_and_edges(
         )
 
         # Then process edges
-        _process_graph_edges(graph, name_mapping, existing_edges_map, relationships)
+        _process_graph_edges(
+            graph, name_mapping, existing_edges_map, relationships, added_nodes_map
+        )
 
     # Return combined results
     graph_nodes = data_chunks + list(added_ontology_nodes_map.values())

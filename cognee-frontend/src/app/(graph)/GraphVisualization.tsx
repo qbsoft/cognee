@@ -210,8 +210,8 @@ export default function GraphVisualization({ ref, data, graphControls, className
   useEffect(() => {
     if (data && graphRef.current) {
       // add collision force
-      graphRef.current.d3Force("collision", forceCollide(nodeSize * 1.5));
-      graphRef.current.d3Force("charge", forceManyBody().strength(-10).distanceMin(10).distanceMax(50));
+      graphRef.current.d3Force("collision", forceCollide(nodeSize * 2));
+      graphRef.current.d3Force("charge", forceManyBody().strength(-150).distanceMin(30).distanceMax(200));
     }
   }, [data, graphRef]);
 
