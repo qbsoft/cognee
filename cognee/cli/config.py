@@ -8,6 +8,7 @@ DEFAULT_DOCS_URL = "https://docs.cognee.ai"
 
 # Command descriptions - these should match the actual command implementations
 COMMAND_DESCRIPTIONS = {
+    "init": "Initialize Cognee environment and setup required databases",
     "add": "Add data to Cognee for knowledge graph processing",
     "search": "Search and query the knowledge graph for insights, information, and connections",
     "cognify": "Transform ingested data into a structured knowledge graph",

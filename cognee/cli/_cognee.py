@@ -87,6 +87,7 @@ def _discover_commands() -> List[Type[SupportsCliCommand]]:
     commands = []
 
     command_modules = [
+        ("cognee.cli.commands.init_command", "InitCommand"),
         ("cognee.cli.commands.add_command", "AddCommand"),
         ("cognee.cli.commands.search_command", "SearchCommand"),
         ("cognee.cli.commands.cognify_command", "CognifyCommand"),
