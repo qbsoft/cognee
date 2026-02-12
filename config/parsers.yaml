@@ -1,0 +1,23 @@
+parsers:
+  pdf:
+    default: docling
+    fallback: pypdf
+    options:
+      extract_tables: true
+      extract_images: true
+      ocr_enabled: true
+  docx:
+    default: docling
+    fallback: unstructured
+  pptx:
+    default: docling
+    fallback: unstructured
+  xlsx:
+    default: docling
+    fallback: unstructured
+  image:
+    default: paddleocr
+    deep_understanding: qwen-vl
+  audio:
+    default: whisper
+    fallback: funasr

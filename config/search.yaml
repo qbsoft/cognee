@@ -1,0 +1,18 @@
+search:
+  default_type: hybrid
+  hybrid:
+    strategies:
+      vector:
+        weight: 0.4
+      graph:
+        weight: 0.3
+      lexical:
+        weight: 0.3
+    fusion: reciprocal_rank
+    rrf_k: 60
+    top_k: 20
+  reranking:
+    enabled: true
+    model: bge-reranker-v2-m3
+    top_k: 10
+    fallback: llm

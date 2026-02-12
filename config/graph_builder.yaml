@@ -1,0 +1,12 @@
+graph_builder:
+  extraction:
+    multi_round_validation: true
+    confidence_threshold: 0.7
+  entity_resolution:
+    enabled: true
+    fuzzy_threshold: 0.85
+    embedding_threshold: 0.9
+    llm_assisted: false
+  ontology:
+    enabled: false
+    source: config/ontology.yaml
