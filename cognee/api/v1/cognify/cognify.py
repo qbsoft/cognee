@@ -25,6 +25,9 @@ from cognee.tasks.documents import (
 from cognee.tasks.graph import extract_graph_from_data
 from cognee.tasks.storage import add_data_points
 from cognee.tasks.summarization import summarize_text
+from cognee.tasks.graph_validation import validate_extracted_graph
+from cognee.tasks.entity_resolution import resolve_entities
+from cognee.infrastructure.config.yaml_config import get_module_config
 from cognee.modules.pipelines.layers.pipeline_execution_mode import get_pipeline_executor
 from cognee.tasks.temporal_graph.extract_events_and_entities import extract_events_and_timestamps
 from cognee.tasks.temporal_graph.extract_knowledge_graph_from_events import (
@@ -290,6 +293,42 @@ async def get_default_tasks(  # TODO: Find out a better way to do this (Boris's 
         ),
         Task(add_data_points, task_config={"batch_size": chunks_per_batch}),
     ]
+
+    # Conditionally inject graph validation and entity resolution tasks
+    # based on YAML configuration (graph_builder.yaml)
+    gb_config = get_module_config("graph_builder")
+    gb = gb_config.get("graph_builder", {})
+    extraction_config = gb.get("extraction", {})
+    entity_res_config = gb.get("entity_resolution", {})
+
+    enable_validation = extraction_config.get("multi_round_validation", False)
+    enable_entity_resolution = entity_res_config.get("enabled", False)
+
+    # Find the insertion point: right after extract_graph_from_data
+    # which is at index 2 (0=classify, 1=extract_chunks, 2=extract_graph)
+    insert_idx = 3  # after extract_graph_from_data
+
+    if enable_entity_resolution:
+        fuzzy_threshold = entity_res_config.get("fuzzy_threshold", 0.85)
+        embedding_threshold = entity_res_config.get("embedding_threshold", 0.9)
+        default_tasks.insert(
+            insert_idx,
+            Task(
+                resolve_entities,
+                fuzzy_threshold=fuzzy_threshold,
+                embedding_threshold=embedding_threshold,
+            ),
+        )
+
+    if enable_validation:
+        confidence_threshold = extraction_config.get("confidence_threshold", 0.7)
+        default_tasks.insert(
+            insert_idx,
+            Task(
+                validate_extracted_graph,
+                confidence_threshold=confidence_threshold,
+            ),
+        )
 
     return default_tasks
 
