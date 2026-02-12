@@ -1,0 +1,45 @@
+# 领域本体配置
+# 定义实体类型和关系类型的白名单
+# 配置后图谱提取仅提取白名单内的类型
+# 设置 enabled: false 或删除此文件可禁用本体约束
+
+enabled: false  # 默认关闭，不影响现有流程
+
+entity_types:
+  - name: Person
+    description: "人物实体"
+    aliases: ["人", "人员", "人物"]
+  - name: Organization
+    description: "组织实体"
+    aliases: ["组织", "机构", "公司", "企业"]
+  - name: Location
+    description: "地点实体"
+    aliases: ["地点", "位置", "地方"]
+  - name: Technology
+    description: "技术实体"
+    aliases: ["技术", "工具", "框架"]
+  - name: Product
+    description: "产品实体"
+    aliases: ["产品", "服务"]
+
+relation_types:
+  - name: works_at
+    description: "工作于"
+    source_type: Person
+    target_type: Organization
+  - name: located_in
+    description: "位于"
+    source_type: Organization
+    target_type: Location
+  - name: uses
+    description: "使用"
+    source_type: Organization
+    target_type: Technology
+  - name: develops
+    description: "开发"
+    source_type: Organization
+    target_type: Product
+  - name: affiliated_with
+    description: "关联"
+    source_type: Person
+    target_type: Organization
