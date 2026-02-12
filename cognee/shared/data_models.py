@@ -81,6 +81,8 @@ class ChunkStrategy(Enum):
     SENTENCE = "sentence"
     CODE = "code"
     LANGCHAIN_CHARACTER = "langchain_character"
+    SEMANTIC = "semantic"
+    LLM_ENHANCED = "llm_enhanced"
 
 
 class ChunkEngine(Enum):
