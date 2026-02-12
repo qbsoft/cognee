@@ -25,6 +25,7 @@ from cognee.modules.retrieval.graph_completion_context_extension_retriever impor
 from cognee.modules.retrieval.code_retriever import CodeRetriever
 from cognee.modules.retrieval.cypher_search_retriever import CypherSearchRetriever
 from cognee.modules.retrieval.natural_language_retriever import NaturalLanguageRetriever
+from cognee.modules.search.retrievers.HybridRetriever import HybridRetriever
 
 
 async def get_search_type_tools(
@@ -157,6 +158,23 @@ async def get_search_type_tools(
         SearchType.CODING_RULES: [
             CodingRulesRetriever(rules_nodeset_name=node_name).get_existing_rules,
         ],
+        SearchType.HYBRID_SEARCH: (
+            lambda _hr=HybridRetriever(
+                vector_retriever=ChunksRetriever(top_k=top_k).get_completion,
+                graph_retriever=GraphCompletionRetriever(
+                    top_k=top_k,
+                    system_prompt_path=system_prompt_path,
+                    system_prompt=system_prompt,
+                    node_type=node_type,
+                    node_name=node_name,
+                    save_interaction=save_interaction,
+                ).get_completion,
+                lexical_retriever=JaccardChunksRetriever(top_k=top_k).get_completion,
+                top_k=top_k,
+            ): [
+                _hr.get_completion,
+            ]
+        )(),
     }
 
     # If the query type is FEELING_LUCKY, select the search type intelligently
