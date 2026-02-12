@@ -1,12 +1,8 @@
-multimodal:
-  image:
-    ocr_engine: paddleocr
-    deep_understanding: true
-    vision_model: qwen-vl
-  audio:
-    stt_engine: whisper
-    language: auto
-  video:
-    enabled: false
-    frame_interval: 5
-    extract_audio: true
+image:
+  ocr_engine: paddleocr  # paddleocr | tesseract
+  enable_vision_llm: true
+  preferred_loader: ocr_enhanced_image_loader
+
+audio:
+  transcription_engine: whisper
+  enable_summarization: false

@@ -30,3 +30,17 @@ try:
     supported_loaders[BeautifulSoupLoader.loader_name] = BeautifulSoupLoader
 except ImportError:
     pass
+
+try:
+    from cognee.infrastructure.loaders.core.ocr_enhanced_image_loader import OcrEnhancedImageLoader
+
+    supported_loaders[OcrEnhancedImageLoader.loader_name] = OcrEnhancedImageLoader
+except ImportError:
+    pass
+
+try:
+    from cognee.infrastructure.loaders.docling_loader import DoclingLoader
+
+    supported_loaders["docling_loader"] = DoclingLoader
+except ImportError:
+    pass

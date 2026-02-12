@@ -27,6 +27,7 @@ class LoaderEngine:
         self._mime_type_map: Dict[str, List[LoaderInterface]] = {}
 
         self.default_loader_priority = [
+            "docling_loader",
             "text_loader",
             "pypdf_loader",
             "image_loader",
