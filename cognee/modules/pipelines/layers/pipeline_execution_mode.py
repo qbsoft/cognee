@@ -1,6 +1,9 @@
 import asyncio
+import logging
 from typing import Any, AsyncIterable, AsyncGenerator, Callable, Dict, Union, Awaitable
 from cognee.modules.pipelines.models.PipelineRunInfo import PipelineRunCompleted, PipelineRunErrored
+
+logger = logging.getLogger(__name__)
 from cognee.modules.pipelines.queues.pipeline_run_info_queues import push_to_queue
 
 AsyncGenLike = Union[
@@ -87,8 +90,7 @@ async def run_pipeline_as_background_process(
                 break
             except Exception as e:
                 # Log error but don't crash other pipelines
-                import logging
-                logging.getLogger(__name__).error(f"Pipeline execution error: {e}")
+                logger.error(f"Pipeline execution error: {e}")
                 break
 
     async def handle_rest_of_the_run(pipeline_list):
