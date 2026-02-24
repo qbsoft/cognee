@@ -79,12 +79,18 @@
 ### Phase 10b: 测试修复补充 (1 commit)
 - 修复 test_conditional_authentication.py 11 个失败 (x_api_key=None + REQUIRE_AUTHENTICATION patch + tenant_id=None)
 - 修复 regex_entity_config.py Windows GBK 编码错误 (encoding="utf-8")
-- 测试结果: 1300 passed, 4 skipped, 13 failed (均需外部服务), 0 errors
 
-**测试总数**: 1300 passed, 4 skipped (32 commits)
+### Phase 10c: Rate Limiting 测试修复 (1 commit)
+- 修复 test_rate_limiting_retry.py: 添加 @pytest.mark.asyncio + 重命名 helper 函数避免 pytest 收集
+- 修复 test_rate_limiting_realistic.py: 添加 @pytest.mark.asyncio
+- 修复 test_embedding_rate_limiting_realistic.py: 添加 @pytest.mark.asyncio
+- 测试结果: 1307 passed, 4 skipped, 6 failed (需要 Embedding API), 0 errors
 
-**Git Commits (32个)**:
+**测试总数**: 1307 passed, 4 skipped (33 commits)
+
+**Git Commits (33个)**:
 ```
+a1d37802 fix: add pytest.mark.asyncio to rate limiting tests and rename helper functions
 eae628c6 fix: resolve conditional auth tests and regex config encoding issue
 7bcde4c7 fix: move logging import to module level in pipeline_execution_mode
 5b1bc25c fix: rewrite conditional auth tests using FastAPI dependency_overrides
@@ -119,7 +125,7 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-10 已完成，项目进入维护阶段
-- 修复 graph_completion_retriever 测试 (6个, 需要 LLM API)
-- 修复 rate_limiting 测试 (5个, 需要真实 API 环境)
+- 所有 Phase 0-10c 已完成，项目进入维护阶段
+- 修复 graph_completion_retriever 测试 (3个, 需要 Embedding API / OPENAI_API_KEY)
+- 修复 graph_completion_retriever 其他测试 (3个, 同上)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
