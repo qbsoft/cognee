@@ -11,7 +11,7 @@ skip_in_ci = pytest.mark.skipif(
 @skip_in_ci
 @pytest.mark.asyncio
 async def test_fetch():
-    url = "http://example.com/"
+    url = "https://www.sina.com.cn/"
     results = await fetch_with_tavily(url)
     assert isinstance(results, dict)
     assert len(results) == 1
