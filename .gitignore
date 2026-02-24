@@ -197,3 +197,19 @@ SWE-bench_testsample/
 
 # ChromaDB Data
 .chromadb_data/
+
+# Claude Code temporary files
+tmpclaude-*
+.claude/
+
+# Temporary test files
+test_document.txt
+
+# Windows null device artifact
+nul
+
+# Plan documents (local only)
+docs/plans/
+
+# Spec documents (local only)
+specs/
