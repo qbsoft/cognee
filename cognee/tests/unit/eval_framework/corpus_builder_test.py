@@ -1,4 +1,7 @@
 import pytest
+
+pytest.importorskip("gdown", reason="gdown not installed, skipping eval framework tests")
+
 from cognee.eval_framework.corpus_builder.corpus_builder_executor import CorpusBuilderExecutor
 from cognee.infrastructure.databases.graph import get_graph_engine
 from unittest.mock import AsyncMock, patch

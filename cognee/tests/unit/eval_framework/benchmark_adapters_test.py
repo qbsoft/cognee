@@ -1,4 +1,7 @@
 import pytest
+
+pytest.importorskip("gdown", reason="gdown not installed, skipping eval framework tests")
+
 from cognee.eval_framework.benchmark_adapters.hotpot_qa_adapter import HotpotQAAdapter
 from cognee.eval_framework.benchmark_adapters.musique_adapter import MusiqueQAAdapter
 from cognee.eval_framework.benchmark_adapters.dummy_adapter import DummyAdapter

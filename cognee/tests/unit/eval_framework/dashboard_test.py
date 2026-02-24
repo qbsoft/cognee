@@ -2,6 +2,9 @@ import unittest
 import json
 import os
 
+import pytest
+
+pytest.importorskip("plotly", reason="plotly not installed, skipping dashboard tests")
 
 from cognee.eval_framework.analysis.dashboard_generator import (
     create_distribution_plots,

@@ -1,6 +1,9 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock
+
+pytest.importorskip("neo4j", reason="neo4j not installed, skipping neo4j tests")
+
 from neo4j.exceptions import Neo4jError
 from cognee.infrastructure.databases.graph.neo4j_driver.deadlock_retry import deadlock_retry
 
