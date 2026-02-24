@@ -76,10 +76,16 @@
 - Code review: 移动 logging import 到模块顶部
 - 验证 CI/CD 已覆盖 unit tests, 依赖版本已固定
 
-**测试总数**: 1285 passed, 4 skipped (31 commits)
+### Phase 10b: 测试修复补充 (1 commit)
+- 修复 test_conditional_authentication.py 11 个失败 (x_api_key=None + REQUIRE_AUTHENTICATION patch + tenant_id=None)
+- 修复 regex_entity_config.py Windows GBK 编码错误 (encoding="utf-8")
+- 测试结果: 1300 passed, 4 skipped, 13 failed (均需外部服务), 0 errors
 
-**Git Commits (31个)**:
+**测试总数**: 1300 passed, 4 skipped (32 commits)
+
+**Git Commits (32个)**:
 ```
+eae628c6 fix: resolve conditional auth tests and regex config encoding issue
 7bcde4c7 fix: move logging import to module level in pipeline_execution_mode
 5b1bc25c fix: rewrite conditional auth tests using FastAPI dependency_overrides
 1fa330ab test: add importorskip for optional dependencies in eval/graph tests
@@ -114,8 +120,6 @@ deb7b119 feat: add graph validation (T2A05)
 
 **下次可继续的工作**:
 - 所有 Phase 0-10 已完成，项目进入维护阶段
-- 修复 test_conditional_authentication.py (11个失败, 同类 .env 环境依赖问题)
-- 修复 regex_entity_extraction_test.py (15 errors, Windows GBK 编码问题)
 - 修复 graph_completion_retriever 测试 (6个, 需要 LLM API)
 - 修复 rate_limiting 测试 (5个, 需要真实 API 环境)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
