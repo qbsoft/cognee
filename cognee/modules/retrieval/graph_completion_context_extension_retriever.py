@@ -39,6 +39,7 @@ class GraphCompletionContextExtensionRetriever(GraphCompletionRetriever):
         node_type: Optional[Type] = None,
         node_name: Optional[List[str]] = None,
         save_interaction: bool = False,
+        similarity_threshold: float = 0.5,
     ):
         super().__init__(
             user_prompt_path=user_prompt_path,
@@ -48,6 +49,7 @@ class GraphCompletionContextExtensionRetriever(GraphCompletionRetriever):
             node_name=node_name,
             save_interaction=save_interaction,
             system_prompt=system_prompt,
+            similarity_threshold=similarity_threshold,
         )
 
     async def get_completion(

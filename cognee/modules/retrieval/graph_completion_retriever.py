@@ -47,6 +47,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         node_type: Optional[Type] = None,
         node_name: Optional[List[str]] = None,
         save_interaction: bool = False,
+        similarity_threshold: float = 0.5,
     ):
         """Initialize retriever with prompt paths and search parameters."""
         self.save_interaction = save_interaction
@@ -56,6 +57,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         self.top_k = top_k if top_k is not None else 5
         self.node_type = node_type
         self.node_name = node_name
+        self.similarity_threshold = similarity_threshold
 
     async def resolve_edges_to_text(self, retrieved_edges: list) -> str:
         """
@@ -102,6 +104,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         found_triplets = await brute_force_triplet_search(
             query,
             top_k=self.top_k,
+            similarity_threshold=self.similarity_threshold,
             collections=vector_index_collections or None,
             node_type=self.node_type,
             node_name=self.node_name,
