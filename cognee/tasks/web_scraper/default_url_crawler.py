@@ -112,7 +112,8 @@ class DefaultUrlCrawler:
         """
         try:
             return urlparse(url).netloc
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to parse domain from URL {url}: {e}")
             return url
 
     @lru_cache(maxsize=1024)
@@ -263,7 +264,8 @@ class DefaultUrlCrawler:
             if cache is None:
                 cache = await self._fetch_and_cache_robots(domain_root)
             return cache.crawl_delay
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to get crawl delay for {url}: {e}, using default {self.crawl_delay}s")
             return self.crawl_delay
 
     async def _fetch_httpx(self, url: str) -> str:

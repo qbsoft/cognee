@@ -16,12 +16,18 @@ DEFAULT_CONFIDENCE = 0.5
 
 
 async def validate_extracted_graph(
-    extracted_data: List[Dict[str, Any]],
+    extracted_data,
     llm_client: Optional[Callable] = None,
     confidence_threshold: float = 0.7,
-) -> List[Dict[str, Any]]:
+):
     if not extracted_data:
         return []
+    # If pipeline passes non-dict objects (e.g. DocumentChunk), pass through unchanged
+    if extracted_data and not isinstance(extracted_data[0], dict):
+        logger.debug(
+            f"图谱验证: 输入类型为 {type(extracted_data[0]).__name__}，跳过验证直接传递"
+        )
+        return extracted_data
     llm_failed = False
     try:
         if llm_client is None:

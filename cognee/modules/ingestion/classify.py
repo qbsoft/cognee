@@ -13,8 +13,16 @@ def classify(data: Union[str, BinaryIO], filename: str = None):
 
     if isinstance(data, BufferedReader) or isinstance(data, SpooledTemporaryFile):
         # Prioritize provided filename over temporary file name
-        # Use filename if provided, otherwise fallback to data.name
-        actual_filename = filename if filename else str(data.name).split("/")[-1]
+        # Use filename if provided, otherwise fallback to data.name (if available)
+        if filename:
+            actual_filename = filename
+        else:
+            data_name = getattr(data, "name", None)
+            if data_name is None:
+                # Try to get name from underlying raw stream (e.g., BufferedReader wrapping BytesIO)
+                raw = getattr(data, "raw", None)
+                data_name = getattr(raw, "name", None) if raw else None
+            actual_filename = str(data_name).split("/")[-1] if data_name else "unknown"
         return BinaryData(data, actual_filename)
 
     try:

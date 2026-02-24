@@ -21,6 +21,12 @@ async def resolve_entities(
 ) -> List[Dict[str, Any]]:
     if not entities or len(entities) <= 1:
         return entities
+    # If pipeline passes non-dict objects (e.g. DocumentChunk), pass through unchanged
+    if not isinstance(entities[0], dict):
+        logger.debug(
+            f"实体消歧: 输入类型为 {type(entities[0]).__name__}，跳过消歧直接传递"
+        )
+        return entities
 
     n = len(entities)
     parent = list(range(n))

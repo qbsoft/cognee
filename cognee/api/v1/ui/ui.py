@@ -48,8 +48,9 @@ def _stream_process_output(
                     line_text = line.decode("utf-8").rstrip()
                     if line_text:
                         print(f"{color_code}{prefix}{reset_code} {line_text}", flush=True)
-        except Exception:
-            pass
+        except Exception as e:
+            # Stream closed or process ended - this is expected during shutdown
+            logger.debug(f"Stream reader for {prefix} ended: {e}")
         finally:
             if stream:
                 stream.close()
@@ -69,7 +70,8 @@ def _is_port_available(port: int) -> bool:
             sock.settimeout(1)  # 1 second timeout
             result = sock.connect_ex(("localhost", port))
             return result != 0  # Port is available if connection fails
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Error checking port {port} availability: {e}")
         return False
 
 
@@ -394,7 +396,8 @@ def is_development_frontend(frontend_path: Path) -> bool:
         dev_dependencies = package_data.get("devDependencies", {})
 
         return "next" in dependencies or "next" in dev_dependencies
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Error checking if development frontend at {frontend_path}: {e}")
         return False
 
 

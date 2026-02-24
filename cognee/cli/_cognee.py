@@ -214,8 +214,12 @@ def main() -> int:
                     subprocess.run(
                         ["docker", "rm", "-f", docker_container], capture_output=True, check=False
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Log cleanup errors for debugging, but don't fail the shutdown
+                    try:
+                        fmt.warning(f"Error stopping Docker container {docker_container}: {e}")
+                    except (BrokenPipeError, OSError):
+                        pass
 
             # Then, stop regular processes
             for pid in spawned_pids:
@@ -239,8 +243,12 @@ def main() -> int:
                             fmt.success(f"✓ Process {pid} and its children terminated.")
                         except (BrokenPipeError, OSError):
                             pass
-                except (OSError, ProcessLookupError, subprocess.SubprocessError):
-                    pass
+                except (OSError, ProcessLookupError, subprocess.SubprocessError) as e:
+                    # Log process termination errors for debugging
+                    try:
+                        fmt.warning(f"Error terminating process {pid}: {e}")
+                    except (BrokenPipeError, OSError):
+                        pass
 
             sys.exit(0)
 

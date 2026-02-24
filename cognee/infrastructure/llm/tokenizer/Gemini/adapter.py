@@ -1,11 +1,15 @@
+import warnings
 from typing import List, Any
 
 from ..tokenizer_interface import TokenizerInterface
 
 
-# NOTE: DEPRECATED as to count tokens you need to send an API request to Google it is too slow to use with Cognee
 class GeminiTokenizer(TokenizerInterface):
     """
+    DEPRECATED: This tokenizer is deprecated because counting tokens requires
+    an API request to Google, which is too slow for use with Cognee.
+    Use TikTokenTokenizer instead for Gemini models.
+
     Implements a tokenizer interface for the Gemini model, managing token extraction and
     counting.
 
@@ -20,6 +24,12 @@ class GeminiTokenizer(TokenizerInterface):
         llm_model: str,
         max_completion_tokens: int = 3072,
     ):
+        warnings.warn(
+            "GeminiTokenizer is deprecated because it requires API calls to count tokens, "
+            "which is too slow. Use TikTokenTokenizer instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.llm_model = llm_model
         self.max_completion_tokens = max_completion_tokens
 

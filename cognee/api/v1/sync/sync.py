@@ -551,7 +551,8 @@ async def _get_file_size(file_path: str) -> int:
         file_storage = get_file_storage(file_dir)
 
         return await file_storage.get_size(file_name)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to get file size for {file_path}: {e}, defaulting to 0")
         return 0
 
 
@@ -841,13 +842,20 @@ async def _prune_cloud_dataset(
 
 
 async def _trigger_remote_cognify(
-    cloud_base_url: str, auth_token: str, dataset_id: str, run_id: str
+    cloud_base_url: str, auth_token: str, dataset_id: str, run_id: str, max_retries: int = 3
 ) -> None:
     """
-    Trigger cognify processing on the cloud dataset.
+    Trigger cognify processing on the cloud dataset with retry support.
 
     This initiates knowledge graph processing on the synchronized dataset
     using the cloud infrastructure.
+
+    Args:
+        cloud_base_url: Base URL for Cognee Cloud API
+        auth_token: Authentication token
+        dataset_id: Dataset ID to trigger cognify for
+        run_id: Sync operation run ID for logging
+        max_retries: Maximum number of retry attempts (default: 3)
     """
     url = f"{cloud_base_url}/api/cognify"
     headers = {"X-Api-Key": auth_token, "Content-Type": "application/json"}
@@ -860,29 +868,43 @@ async def _trigger_remote_cognify(
 
     logger.info(f"Triggering cognify processing for dataset {dataset_id}")
 
-    try:
-        ssl_context = create_secure_ssl_context()
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.post(url, json=payload, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    logger.info(f"Cognify processing started successfully: {data}")
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            ssl_context = create_secure_ssl_context()
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                async with session.post(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        logger.info(f"Cognify processing started successfully: {data}")
 
-                    # Extract pipeline run IDs for monitoring if available
-                    if isinstance(data, dict):
-                        for dataset_key, run_info in data.items():
-                            if isinstance(run_info, dict) and "pipeline_run_id" in run_info:
-                                logger.info(
-                                    f"Cognify pipeline run ID for dataset {dataset_key}: {run_info['pipeline_run_id']}"
-                                )
-                else:
+                        # Extract pipeline run IDs for monitoring if available
+                        if isinstance(data, dict):
+                            for dataset_key, run_info in data.items():
+                                if isinstance(run_info, dict) and "pipeline_run_id" in run_info:
+                                    logger.info(
+                                        f"Cognify pipeline run ID for dataset {dataset_key}: {run_info['pipeline_run_id']}"
+                                    )
+                        return  # Success, exit the retry loop
+
                     error_text = await response.text()
+                    last_error = f"HTTP {response.status} - {error_text}"
                     logger.warning(
-                        f"Failed to trigger cognify processing: Status {response.status} - {error_text}"
+                        f"Failed to trigger cognify (attempt {attempt}/{max_retries}): {last_error}"
                     )
-                    # TODO: consider adding retries
 
-    except Exception as e:
-        logger.warning(f"Error triggering cognify processing: {str(e)}")
-        # TODO: consider adding retries
+        except Exception as e:
+            last_error = str(e)
+            logger.warning(
+                f"Error triggering cognify (attempt {attempt}/{max_retries}): {last_error}"
+            )
+
+        # Wait before retry with exponential backoff
+        if attempt < max_retries:
+            wait_time = 2 ** attempt  # 2s, 4s, 8s
+            logger.info(f"Retrying cognify trigger in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
+    # All retries exhausted
+    logger.error(f"Failed to trigger cognify after {max_retries} attempts. Last error: {last_error}")
