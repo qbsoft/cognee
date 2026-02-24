@@ -66,6 +66,7 @@ class GraphCompletionCotRetriever(GraphCompletionRetriever):
         node_type: Optional[Type] = None,
         node_name: Optional[List[str]] = None,
         save_interaction: bool = False,
+        similarity_threshold: float = 0.5,
     ):
         super().__init__(
             user_prompt_path=user_prompt_path,
@@ -75,6 +76,7 @@ class GraphCompletionCotRetriever(GraphCompletionRetriever):
             node_type=node_type,
             node_name=node_name,
             save_interaction=save_interaction,
+            similarity_threshold=similarity_threshold,
         )
         self.validation_system_prompt_path = validation_system_prompt_path
         self.validation_user_prompt_path = validation_user_prompt_path
