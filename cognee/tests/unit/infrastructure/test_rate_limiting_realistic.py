@@ -1,5 +1,6 @@
 import asyncio
 import os
+import pytest
 from unittest.mock import patch
 from cognee.shared.logging_utils import get_logger
 from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.rate_limiter import (
@@ -10,6 +11,7 @@ from cognee.infrastructure.llm.config import (
 )
 
 
+@pytest.mark.asyncio
 async def test_rate_limiting_realistic():
     """
     Test the rate limiting feature with a smaller limit to demonstrate
@@ -153,7 +155,7 @@ async def test_rate_limiting_realistic():
     print("=== Rate Limiting Test Complete ===\n")
 
 
-async def main():
+async def _main():
     """Run the realistic rate limiting test."""
     await test_rate_limiting_realistic()
 
@@ -163,6 +165,6 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(main())
+        loop.run_until_complete(_main())
     finally:
         loop.run_until_complete(loop.shutdown_asyncgens())

@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+import pytest
 
 from cognee.infrastructure.llm.config import (
     get_llm_config,
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.asyncio
 async def test_embedding_rate_limiting_realistic():
     """
     Test the embedding rate limiting feature with a realistic scenario:
@@ -158,6 +160,7 @@ async def test_embedding_rate_limiting_realistic():
     os.environ.pop("DISABLE_RETRIES", None)
 
 
+@pytest.mark.asyncio
 async def test_with_mock_failures():
     """
     Test with the mock engine's ability to generate controlled failures.

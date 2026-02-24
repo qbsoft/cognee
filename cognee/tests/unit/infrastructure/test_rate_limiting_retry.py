@@ -1,5 +1,6 @@
 import time
 import asyncio
+import pytest
 from cognee.shared.logging_utils import get_logger
 from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.rate_limiter import (
     sleep_and_retry_sync,
@@ -10,40 +11,39 @@ from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.ll
 logger = get_logger()
 
 
-# Test function to be decorated
+# Helper functions to be decorated (prefixed with _ to avoid pytest collection)
 @sleep_and_retry_sync(max_retries=3, initial_backoff=0.1, backoff_factor=2.0)
-def test_function_sync():
-    """A test function that raises rate limit errors a few times, then succeeds."""
-    if hasattr(test_function_sync, "counter"):
-        test_function_sync.counter += 1
+def _retry_target_sync():
+    """A helper function that raises rate limit errors a few times, then succeeds."""
+    if hasattr(_retry_target_sync, "counter"):
+        _retry_target_sync.counter += 1
     else:
-        test_function_sync.counter = 1
+        _retry_target_sync.counter = 1
 
-    if test_function_sync.counter <= 2:
+    if _retry_target_sync.counter <= 2:
         error_msg = "429 Too Many Requests: Rate limit exceeded"
-        logger.info(f"Attempt {test_function_sync.counter}: Raising rate limit error")
+        logger.info(f"Attempt {_retry_target_sync.counter}: Raising rate limit error")
         raise Exception(error_msg)
 
-    logger.info(f"Attempt {test_function_sync.counter}: Success!")
-    return f"Success on attempt {test_function_sync.counter}"
+    logger.info(f"Attempt {_retry_target_sync.counter}: Success!")
+    return f"Success on attempt {_retry_target_sync.counter}"
 
 
-# Test async function to be decorated
 @sleep_and_retry_async(max_retries=3, initial_backoff=0.1, backoff_factor=2.0)
-async def test_function_async():
-    """An async test function that raises rate limit errors a few times, then succeeds."""
-    if hasattr(test_function_async, "counter"):
-        test_function_async.counter += 1
+async def _retry_target_async():
+    """An async helper function that raises rate limit errors a few times, then succeeds."""
+    if hasattr(_retry_target_async, "counter"):
+        _retry_target_async.counter += 1
     else:
-        test_function_async.counter = 1
+        _retry_target_async.counter = 1
 
-    if test_function_async.counter <= 2:
+    if _retry_target_async.counter <= 2:
         error_msg = "429 Too Many Requests: Rate limit exceeded"
-        logger.info(f"Attempt {test_function_async.counter}: Raising rate limit error")
+        logger.info(f"Attempt {_retry_target_async.counter}: Raising rate limit error")
         raise Exception(error_msg)
 
-    logger.info(f"Attempt {test_function_async.counter}: Success!")
-    return f"Success on attempt {test_function_async.counter}"
+    logger.info(f"Attempt {_retry_target_async.counter}: Success!")
+    return f"Success on attempt {_retry_target_async.counter}"
 
 
 def test_is_rate_limit_error():
@@ -92,26 +92,26 @@ def test_sync_retry():
     """Test the synchronous retry decorator."""
     print("\n=== Testing Synchronous Sleep and Retry ===")
 
-    # Reset counter for the test function
-    if hasattr(test_function_sync, "counter"):
-        del test_function_sync.counter
+    # Reset counter for the helper function
+    if hasattr(_retry_target_sync, "counter"):
+        del _retry_target_sync.counter
 
     # Time the execution to verify backoff is working
     start_time = time.time()
 
     try:
-        result = test_function_sync()
+        result = _retry_target_sync()
         end_time = time.time()
         elapsed = end_time - start_time
 
         # Verify results
         print(f"Result: {result}")
         print(f"Test completed in {elapsed:.2f} seconds")
-        print(f"Number of attempts: {test_function_sync.counter}")
+        print(f"Number of attempts: {_retry_target_sync.counter}")
 
         # The function should succeed on the 3rd attempt (after 2 failures)
-        assert test_function_sync.counter == 3, (
-            f"Expected 3 attempts, got {test_function_sync.counter}"
+        assert _retry_target_sync.counter == 3, (
+            f"Expected 3 attempts, got {_retry_target_sync.counter}"
         )
         assert elapsed >= 0.3, f"Expected at least 0.3 seconds of backoff, got {elapsed:.2f}"
 
@@ -121,30 +121,31 @@ def test_sync_retry():
         raise
 
 
+@pytest.mark.asyncio
 async def test_async_retry():
     """Test the asynchronous retry decorator."""
     print("\n=== Testing Asynchronous Sleep and Retry ===")
 
-    # Reset counter for the test function
-    if hasattr(test_function_async, "counter"):
-        del test_function_async.counter
+    # Reset counter for the helper function
+    if hasattr(_retry_target_async, "counter"):
+        del _retry_target_async.counter
 
     # Time the execution to verify backoff is working
     start_time = time.time()
 
     try:
-        result = await test_function_async()
+        result = await _retry_target_async()
         end_time = time.time()
         elapsed = end_time - start_time
 
         # Verify results
         print(f"Result: {result}")
         print(f"Test completed in {elapsed:.2f} seconds")
-        print(f"Number of attempts: {test_function_async.counter}")
+        print(f"Number of attempts: {_retry_target_async.counter}")
 
         # The function should succeed on the 3rd attempt (after 2 failures)
-        assert test_function_async.counter == 3, (
-            f"Expected 3 attempts, got {test_function_async.counter}"
+        assert _retry_target_async.counter == 3, (
+            f"Expected 3 attempts, got {_retry_target_async.counter}"
         )
         assert elapsed >= 0.3, f"Expected at least 0.3 seconds of backoff, got {elapsed:.2f}"
 
@@ -154,6 +155,7 @@ async def test_async_retry():
         raise
 
 
+@pytest.mark.asyncio
 async def test_retry_max_exceeded():
     """Test what happens when max retries is exceeded."""
     print("\n=== Testing Max Retries Exceeded ===")
@@ -174,7 +176,7 @@ async def test_retry_max_exceeded():
         print("✅ PASS: Function correctly failed after max retries exceeded")
 
 
-async def main():
+async def _main():
     """Run all the retry tests."""
     test_is_rate_limit_error()
     test_sync_retry()
@@ -188,6 +190,6 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(main())
+        loop.run_until_complete(_main())
     finally:
         loop.run_until_complete(loop.shutdown_asyncgens())
