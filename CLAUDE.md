@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-02-13
+**最后更新**: 2026-02-24
 
 **正在进行的任务**: 无
 
@@ -66,10 +66,27 @@
 - T903-T904 性能基准+安全审计 (56 tests, test_performance_security.py)
 - T905-T908 Docker/CI-CD/spec更新/YAML验证 (70 tests, test_deployment_config.py)
 
-**测试总数**: 767 个测试全部通过 (23 commits)
+### Phase 10: 仓库清理与生产加固 (8 commits)
+- 删除 19 个 tmpclaude-* 临时文件 + nul + test_document.txt
+- 完善 .gitignore (tmpclaude-*, .claude/, nul, docs/plans/, specs/)
+- 提交所有未提交的源码改善 (retry逻辑/日志/类型保护/并发/deprecation)
+- 提交新增单元测试 (chunking/cognify/ingestion/metrics/search/settings/storage)
+- 修复 eval_framework 4 个测试收集错误 (importorskip: gdown/plotly/neo4j)
+- 修复 conditional_authentication 10 个测试 (改用 FastAPI dependency_overrides)
+- Code review: 移动 logging import 到模块顶部
+- 验证 CI/CD 已覆盖 unit tests, 依赖版本已固定
 
-**Git Commits (23个)**:
+**测试总数**: 1285 passed, 4 skipped (31 commits)
+
+**Git Commits (31个)**:
 ```
+7bcde4c7 fix: move logging import to module level in pipeline_execution_mode
+5b1bc25c fix: rewrite conditional auth tests using FastAPI dependency_overrides
+1fa330ab test: add importorskip for optional dependencies in eval/graph tests
+d41fbd39 chore: update .gitignore and CLAUDE.md progress tracking
+6cf1d685 test: add unit tests for chunking, cognify, ingestion, metrics, search, settings, storage
+b52d1da9 test: update crawler tests with more reliable URL and improved validation
+8e57e5b2 refactor: improve logging, add retry logic, fix edge cases
 50aa3398 test: add API documentation and error handling quality tests (T901-T902)
 fae0d52a test: add performance benchmark and security audit tests (T903-T904)
 bddab4e7 test: add deployment, CI/CD, and config validation tests (T905-T908)
@@ -96,7 +113,9 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-9 已完成，项目进入维护阶段
-- 修复 UnstructuredDocument_test (需要 unstructured 依赖)
-- 修复预置 test_conditional_authentication_endpoints.py (7个失败,需要真实环境)
+- 所有 Phase 0-10 已完成，项目进入维护阶段
+- 修复 test_conditional_authentication.py (11个失败, 同类 .env 环境依赖问题)
+- 修复 regex_entity_extraction_test.py (15 errors, Windows GBK 编码问题)
+- 修复 graph_completion_retriever 测试 (6个, 需要 LLM API)
+- 修复 rate_limiting 测试 (5个, 需要真实 API 环境)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
