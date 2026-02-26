@@ -69,8 +69,8 @@ uv venv .venv
 # Linux/macOS
 source .venv/bin/activate
 
-# 安装项目（开发模式，含 PostgreSQL 支持）
-uv pip install -e ".[postgres]"
+# 安装项目（开发模式，含 PostgreSQL + 文档解析支持）
+uv pip install -e ".[postgres,docs]"
 ```
 
 如果不用 `uv`，也可以用 pip：
@@ -79,7 +79,7 @@ uv pip install -e ".[postgres]"
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 source .venv/bin/activate       # Linux/macOS
-pip install -e ".[postgres]"
+pip install -e ".[postgres,docs]"
 ```
 
 ### 2.3 配置环境变量
@@ -451,7 +451,7 @@ curl -X POST http://localhost:8000/api/v1/search \
 
 ```bash
 # 安装测试依赖
-uv pip install -e ".[postgres]"
+uv pip install -e ".[postgres,docs]"
 
 # 运行全部单元测试
 uv run pytest cognee/tests/unit/ -q
@@ -489,7 +489,7 @@ cognee search "What is Cognee?"
 
 | 问题 | 原因 | 解决方案 |
 |------|------|---------|
-| `ModuleNotFoundError` | 依赖未安装 | `uv pip install -e ".[postgres]"` |
+| `ModuleNotFoundError` | 依赖未安装 | `uv pip install -e ".[postgres,docs]"` |
 | `Connection refused (PostgreSQL)` | 数据库未启动 | 启动 PostgreSQL 服务 |
 | `Alembic migration error` | 数据库结构不匹配 | `alembic upgrade head` |
 | 端口 8000 被占用 | 其他进程占用 | `netstat -ano \| findstr :8000` 找到并结束进程 |
