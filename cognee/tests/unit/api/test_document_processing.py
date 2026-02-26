@@ -56,7 +56,9 @@ class TestDoclingLoaderHandlesPdf:
 class TestDoclingLoaderReturnsStructuredContent:
     """T303-2: DoclingLoader.load() returns structured content dict."""
 
-    def test_load_returns_content_and_metadata(self, tmp_path):
+    def test_load_returns_file_path(self, tmp_path):
+        """DoclingLoader.load() should return a file path string after storing content."""
+        _MOD = "cognee.infrastructure.loaders.docling_loader.DoclingLoader"
         loader = DoclingLoader()
 
         fake_result = {
@@ -69,20 +71,27 @@ class TestDoclingLoaderReturnsStructuredContent:
         pdf_file = tmp_path / "doc.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
 
-        with patch.object(loader, "_convert_document", return_value=fake_result):
+        mock_file_metadata = {"content_hash": "fakehash123"}
+        mock_storage = MagicMock()
+        mock_storage.store = AsyncMock(return_value=str(tmp_path / "text_fakehash123.txt"))
+
+        with patch.object(loader, "_convert_document", return_value=fake_result), \
+             patch(f"{_MOD}.get_file_metadata", new_callable=AsyncMock, return_value=mock_file_metadata), \
+             patch(f"{_MOD}.get_storage_config", return_value={"data_root_directory": str(tmp_path)}), \
+             patch(f"{_MOD}.get_file_storage", return_value=mock_storage):
             result = _run(loader.load(str(pdf_file)))
 
         assert result is not None
-        assert "content" in result
-        assert "metadata" in result
-        assert result["content"] == "# Hello World\nSome text"
-        assert result["metadata"]["format"] == "pdf"
+        assert isinstance(result, str), f"Expected file path str, got {type(result).__name__}"
+        assert "fakehash123" in result
 
-    def test_load_returns_structure_key(self, tmp_path):
+    def test_load_stores_markdown_content(self, tmp_path):
+        """DoclingLoader.load() should store extracted markdown content to file storage."""
+        _MOD = "cognee.infrastructure.loaders.docling_loader.DoclingLoader"
         loader = DoclingLoader()
 
         fake_result = {
-            "content": "text",
+            "content": "# Extracted Content",
             "metadata": {"source": "x", "format": "pdf", "num_pages": 1},
             "structure": {"headings": ["H1"], "tables": ["T1"], "figures": []},
         }
@@ -90,11 +99,21 @@ class TestDoclingLoaderReturnsStructuredContent:
         pdf_file = tmp_path / "doc.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
 
-        with patch.object(loader, "_convert_document", return_value=fake_result):
+        mock_file_metadata = {"content_hash": "hash456"}
+        mock_storage = MagicMock()
+        mock_storage.store = AsyncMock(return_value=str(tmp_path / "text_hash456.txt"))
+
+        with patch.object(loader, "_convert_document", return_value=fake_result), \
+             patch(f"{_MOD}.get_file_metadata", new_callable=AsyncMock, return_value=mock_file_metadata), \
+             patch(f"{_MOD}.get_storage_config", return_value={"data_root_directory": str(tmp_path)}), \
+             patch(f"{_MOD}.get_file_storage", return_value=mock_storage):
             result = _run(loader.load(str(pdf_file)))
 
-        assert "structure" in result
-        assert result["structure"]["headings"] == ["H1"]
+        # Verify storage.store was called with the markdown content
+        mock_storage.store.assert_called_once()
+        call_args = mock_storage.store.call_args
+        assert call_args[0][0] == "text_hash456.txt"  # storage file name
+        assert call_args[0][1] == "# Extracted Content"  # markdown content
 
 
 class TestDoclingLoaderReturnsNoneOnFailure:

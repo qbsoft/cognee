@@ -5,6 +5,8 @@ import os
 from typing import Any, Dict, List, Optional
 
 from cognee.infrastructure.loaders.LoaderInterface import LoaderInterface
+from cognee.infrastructure.files.storage import get_file_storage, get_storage_config
+from cognee.infrastructure.files.utils.get_file_metadata import get_file_metadata
 from cognee.shared.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -136,25 +138,25 @@ class DoclingLoader(LoaderInterface):
 
     async def load(
         self, file_path: str, **kwargs
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[str]:
         """
         Load and process the document using Docling.
 
         Runs the synchronous Docling conversion in a thread executor
-        to avoid blocking the event loop. Returns None on failure,
-        allowing the LoaderEngine to fall back to another loader
-        (e.g., PyPdfLoader for PDFs).
+        to avoid blocking the event loop. The extracted markdown content
+        is stored as a text file in cognee's data storage, and the
+        storage file path is returned (consistent with other loaders).
+
+        Returns None on failure, allowing the LoaderEngine to fall back
+        to another loader (e.g., PyPdfLoader for PDFs).
 
         Args:
             file_path: Path to the document file
             **kwargs: Additional loader-specific configuration
 
         Returns:
-            Dictionary with keys:
-                - content: Markdown string of the document
-                - metadata: Dict with source, format, num_pages
-                - structure: Dict with headings, tables, figures
-            Returns None if file does not exist or conversion fails.
+            File path string pointing to the stored text file in cognee
+            data storage, or None if conversion fails.
         """
         if not os.path.exists(file_path):
             logger.warning(f"File not found: {file_path}")
@@ -166,7 +168,24 @@ class DoclingLoader(LoaderInterface):
             result = await loop.run_in_executor(
                 None, self._convert_document, file_path
             )
-            return result
+
+            # Store the extracted markdown content to cognee data storage
+            # (consistent with TextLoader / PyPdfLoader behavior)
+            markdown_content = result["content"]
+
+            with open(file_path, "rb") as f:
+                file_metadata = await get_file_metadata(f)
+
+            storage_file_name = "text_" + file_metadata["content_hash"] + ".txt"
+
+            storage_config = get_storage_config()
+            data_root_directory = storage_config["data_root_directory"]
+            storage = get_file_storage(data_root_directory)
+
+            full_file_path = await storage.store(storage_file_name, markdown_content)
+
+            return full_file_path
+
         except ImportError:
             logger.warning(
                 "docling is not installed. "

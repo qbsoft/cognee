@@ -57,9 +57,11 @@ class TestDoclingLoaderLoad:
     """Test DoclingLoader.load method."""
 
     @pytest.mark.asyncio
-    async def test_load_returns_structured_content(self):
-        """Mock _convert_document and verify load returns dict with content and metadata."""
-        from cognee.infrastructure.loaders.docling_loader import DoclingLoader
+    async def test_load_returns_file_path(self):
+        """Mock _convert_document and verify load returns a file path string."""
+        from cognee.infrastructure.loaders.docling_loader.DoclingLoader import DoclingLoader
+
+        _MOD = "cognee.infrastructure.loaders.docling_loader.DoclingLoader"
 
         loader = DoclingLoader()
 
@@ -77,15 +79,21 @@ class TestDoclingLoaderLoad:
             },
         }
 
+        mock_file_metadata = {"content_hash": "abc123hash"}
+        mock_storage = AsyncMock()
+        mock_storage.store = AsyncMock(return_value="/data/text_abc123hash.txt")
+
         with patch.object(loader, "_convert_document", return_value=mock_result), \
-             patch("os.path.exists", return_value=True):
+             patch("os.path.exists", return_value=True), \
+             patch("builtins.open", MagicMock()), \
+             patch(f"{_MOD}.get_file_metadata", new_callable=AsyncMock, return_value=mock_file_metadata), \
+             patch(f"{_MOD}.get_storage_config", return_value={"data_root_directory": "/data"}), \
+             patch(f"{_MOD}.get_file_storage", return_value=mock_storage):
             result = await loader.load("/tmp/test.pdf")
 
         assert result is not None
-        assert isinstance(result, dict)
-        assert "content" in result
-        assert "metadata" in result
-        assert result["content"] == "# Heading\n\nSome markdown content"
+        assert isinstance(result, str), f"Expected str file path, got {type(result).__name__}"
+        assert "abc123hash" in result
 
     @pytest.mark.asyncio
     async def test_load_pdf_with_fallback(self):
