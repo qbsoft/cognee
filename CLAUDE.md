@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-02-24
+**最后更新**: 2026-02-26
 
 **正在进行的任务**: 无
 
@@ -98,10 +98,25 @@
 - CoT 测试验证 Qwen/DashScope LLM API 调用正常工作
 - 测试结果: 1311 passed, 4 skipped, 0 errors (全部通过)
 
-**测试总数**: 1311 passed, 4 skipped (36 commits)
+### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
+- A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
+- A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
+- A3: 创建中文业务文档专用提取 Prompt (generate_graph_prompt_chinese_business.txt)
+- A4: 增强中文实体消歧 (职务后缀提取/核心人名匹配/全角转半角)
+- B1: 接入 BGE-Reranker 到检索管道 (brute_force_triplet_search)
+- B2: 扩展 Entity/EntityType 向量索引字段 [name] → [name, description]
+- B3: 修复 HYBRID_SEARCH 返回路径 (添加 get_context 方法)
+- B4: 收紧搜索阈值 0.5→0.7 + 限制全量扫描 limit=top_k*10
+- B5: 优化回答生成 Prompt (中文专业版)
+- B6: 连通 search.yaml 配置到 HybridRetriever 权重
+- I4: 清理 format_triplets 调试残留代码
+- 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**Git Commits (36个)**:
+**测试总数**: 1311 passed, 4 skipped (37 commits)
+
+**Git Commits (37个)**:
 ```
+dbc4970a fix: optimize retrieval quality and graph building for Chinese business docs
 05f376fa fix: add similarity_threshold to CoT retriever and fix graph completion tests
 8c64fb85 fix: add similarity_threshold param to retrievers and fix graph completion tests
 a1d37802 fix: add pytest.mark.asyncio to rate limiting tests and rename helper functions
@@ -139,5 +154,9 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-10e 已完成，全部测试通过，项目进入维护阶段
+- 所有 Phase 0-11 已完成，项目进入调试验证阶段
+- 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
+- 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
+- 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
+- 可选: 评估替换 Embedding 模型为 BGE-M3 (对中文语义更好)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
