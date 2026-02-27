@@ -137,6 +137,26 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         triplets = await self.get_triplets(query)
 
         if len(triplets) == 0:
+            # 图谱搜索无结果时，回退到纯 DocumentChunk 向量搜索
+            # 这对聚合/计数类查询（如"共实施多少个流程"）特别有效
+            logger.warning(
+                "Graph triplet search returned 0 results, trying DocumentChunk fallback for query: %s",
+                query,
+            )
+            try:
+                triplets = await brute_force_triplet_search(
+                    query,
+                    top_k=self.top_k,
+                    collections=["DocumentChunk_text"],
+                    similarity_threshold=0.95,
+                    min_quality_score=0.0,
+                    ensure_diversity=False,
+                )
+            except Exception as fallback_err:
+                logger.warning("DocumentChunk fallback failed: %s", fallback_err)
+                triplets = []
+
+        if len(triplets) == 0:
             logger.warning("Empty context was provided to the completion")
             return []
 
