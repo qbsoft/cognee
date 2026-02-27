@@ -24,7 +24,8 @@ class SearchPayloadDTO(InDTO):
     dataset_ids: Optional[list[UUID]] = Field(default=None, examples=[[]])
     query: str = Field(default="What is in the document?")
     system_prompt: Optional[str] = Field(
-        default="Answer the question using the provided context. Be as brief as possible."
+        default=None,
+        description="System prompt for LLM answer generation. If None, uses the file-based prompt (answer_simple_question.txt).",
     )
     node_name: Optional[list[str]] = Field(default=None, example=[])
     top_k: Optional[int] = Field(default=10)

@@ -24,7 +24,6 @@ logger = get_logger(level=ERROR)
 
 
 def format_triplets(edges):
-    print("\n\n\n")
 
     def filter_attributes(obj, attributes):
         """Helper function to filter out non-None properties, including nested dicts."""

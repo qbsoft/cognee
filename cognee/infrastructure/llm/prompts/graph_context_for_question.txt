@@ -1,2 +1,7 @@
-The question is: `{{ question }}`
-and here is the context provided with a set of relationships from a knowledge graph separated by \n---\n each represented as node1 -- relation -- node2 triplet: `{{ context }}`
+用户的问题是: `{{ question }}`
+
+以下是从知识图谱中检索到的相关上下文信息，包含节点内容和节点之间的关系:
+
+{{ context }}
+
+请根据以上知识图谱上下文回答用户的问题。
