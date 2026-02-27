@@ -143,7 +143,10 @@ class CogneeGraph(CogneeAbstractGraph):
 
     async def map_vector_distances_to_graph_nodes(self, node_distances) -> None:
         mapped_nodes = 0
+        unmapped_ids = []
         for category, scored_results in node_distances.items():
+            category_mapped = 0
+            category_unmapped = 0
             for scored_result in scored_results:
                 node_id = str(scored_result.id)
                 score = scored_result.score
@@ -151,6 +154,15 @@ class CogneeGraph(CogneeAbstractGraph):
                 if node:
                     node.add_attribute("vector_distance", score)
                     mapped_nodes += 1
+                    category_mapped += 1
+                else:
+                    category_unmapped += 1
+                    if len(unmapped_ids) < 5:
+                        unmapped_ids.append((category, node_id, score))
+            if category_unmapped > 0:
+                logger.info(f"  {category}: {category_mapped} mapped, {category_unmapped} unmapped (IDs not in graph)")
+        if unmapped_ids:
+            logger.info(f"  示例未映射ID: {unmapped_ids}")
 
     async def map_vector_distances_to_graph_edges(
         self, vector_engine, query_vector, edge_distances
@@ -280,15 +292,97 @@ class CogneeGraph(CogneeAbstractGraph):
             return both_relevant or one_highly_relevant
         
         # 先过滤掉不相关的边（至少一个节点必须有有效的 vector_distance 且低于阈值）
+
+        # ===== 诊断: 分析所有边的距离分布 =====
+        diag_edge_stats = {"no_dist": 0, "nodeset": 0, "both_below": 0, "one_high": 0, "above_threshold": 0}
+        diag_dist_values = []
+        for edge in self.edges:
+            n1_type = edge.node1.attributes.get("type", "")
+            n2_type = edge.node2.attributes.get("type", "")
+            if n1_type == "NodeSet" or n2_type == "NodeSet":
+                diag_edge_stats["nodeset"] += 1
+                continue
+            n1_dist = edge.node1.attributes.get("vector_distance", float("inf"))
+            n2_dist = edge.node2.attributes.get("vector_distance", float("inf"))
+            if n1_dist is None: n1_dist = float("inf")
+            if n2_dist is None: n2_dist = float("inf")
+            if n1_dist == float("inf") and n2_dist == float("inf"):
+                diag_edge_stats["no_dist"] += 1
+                continue
+            # 记录距离值用于分析
+            if n1_dist != float("inf"): diag_dist_values.append(n1_dist)
+            if n2_dist != float("inf"): diag_dist_values.append(n2_dist)
+            # 分类
+            if (n1_dist != float("inf") and n1_dist < adjusted_threshold and
+                n2_dist != float("inf") and n2_dist < adjusted_threshold):
+                diag_edge_stats["both_below"] += 1
+            elif ((n1_dist != float("inf") and n1_dist < 0.3 and n2_dist != float("inf") and n2_dist < adjusted_threshold) or
+                  (n2_dist != float("inf") and n2_dist < 0.3 and n1_dist != float("inf") and n1_dist < adjusted_threshold)):
+                diag_edge_stats["one_high"] += 1
+            else:
+                diag_edge_stats["above_threshold"] += 1
+
+        print(f"\n[DIAG-GRAPH] ===== 边过滤诊断 =====")
+        print(f"[DIAG-GRAPH] 总边数: {len(self.edges)}")
+        print(f"[DIAG-GRAPH] 使用阈值: adjusted={adjusted_threshold}, original={similarity_threshold}")
+        print(f"[DIAG-GRAPH] NodeSet边 (跳过): {diag_edge_stats['nodeset']}")
+        print(f"[DIAG-GRAPH] 无距离边 (两端都无距离): {diag_edge_stats['no_dist']}")
+        print(f"[DIAG-GRAPH] 两端都低于阈值 (保留): {diag_edge_stats['both_below']}")
+        print(f"[DIAG-GRAPH] 一端高相关 (保留): {diag_edge_stats['one_high']}")
+        print(f"[DIAG-GRAPH] 超过阈值 (丢弃): {diag_edge_stats['above_threshold']}")
+        if diag_dist_values:
+            diag_dist_values.sort()
+            print(f"[DIAG-GRAPH] 距离分布: min={min(diag_dist_values):.4f}, max={max(diag_dist_values):.4f}, "
+                  f"median={diag_dist_values[len(diag_dist_values)//2]:.4f}, "
+                  f"count={len(diag_dist_values)}")
+            # 显示距离直方图
+            buckets = [0]*10
+            for d in diag_dist_values:
+                bucket = min(int(d * 10), 9)
+                buckets[bucket] += 1
+            print(f"[DIAG-GRAPH] 距离直方图:")
+            for i, count in enumerate(buckets):
+                bar = "#" * min(count, 50)
+                print(f"[DIAG-GRAPH]   {i*0.1:.1f}-{(i+1)*0.1:.1f}: {count:3d} {bar}")
+
         relevant_edges = [edge for edge in self.edges if is_relevant(edge)]
-        
+
         if not relevant_edges:
             logger.warning(
                 f"No relevant edges found with similarity threshold {similarity_threshold}. "
                 "This may indicate that the query is not related to any nodes in the graph."
             )
+            print(f"[DIAG-GRAPH] ❌ 没有边通过 is_relevant 过滤! 所有结果被丢弃!")
+            # 显示最接近阈值的边以辅助调试
+            near_threshold_edges = []
+            for edge in self.edges:
+                n1_type = edge.node1.attributes.get("type", "")
+                n2_type = edge.node2.attributes.get("type", "")
+                if n1_type == "NodeSet" or n2_type == "NodeSet":
+                    continue
+                n1_dist = edge.node1.attributes.get("vector_distance", float("inf"))
+                n2_dist = edge.node2.attributes.get("vector_distance", float("inf"))
+                if n1_dist is None: n1_dist = float("inf")
+                if n2_dist is None: n2_dist = float("inf")
+                if n1_dist == float("inf") and n2_dist == float("inf"):
+                    continue
+                min_dist = min(
+                    n1_dist if n1_dist != float("inf") else 999,
+                    n2_dist if n2_dist != float("inf") else 999
+                )
+                near_threshold_edges.append((min_dist, edge))
+            near_threshold_edges.sort(key=lambda x: x[0])
+            print(f"[DIAG-GRAPH] 最接近阈值的 5 条边:")
+            for dist, edge in near_threshold_edges[:5]:
+                n1_name = edge.node1.attributes.get("name", "?")
+                n2_name = edge.node2.attributes.get("name", "?")
+                n1_d = edge.node1.attributes.get("vector_distance", "inf")
+                n2_d = edge.node2.attributes.get("vector_distance", "inf")
+                rel = edge.attributes.get("relationship_name", edge.attributes.get("relationship_type", "?"))
+                print(f"[DIAG-GRAPH]   '{n1_name}'(d={n1_d}) --[{rel}]--> '{n2_name}'(d={n2_d})")
             return []
-        
+
+        print(f"[DIAG-GRAPH] ✓ {len(relevant_edges)} 条边通过 is_relevant 过滤")
         logger.info(
             f"Filtered {len(self.edges)} edges to {len(relevant_edges)} relevant edges "
             f"(threshold: {similarity_threshold}), selecting top {k}"

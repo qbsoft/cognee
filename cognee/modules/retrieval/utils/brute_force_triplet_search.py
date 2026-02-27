@@ -22,6 +22,9 @@ from cognee.infrastructure.config.yaml_config import get_module_config
 
 logger = get_logger(level=ERROR)
 
+# 诊断模式开关 - 设为 True 可输出检索管道每个环节的详细信息
+_DIAG_MODE = True
+
 
 def format_triplets(edges):
 
@@ -186,7 +189,23 @@ async def brute_force_triplet_search(
             *[search_in_collection(collection_name) for collection_name in collections]
         )
 
+        # ===== 诊断点 1: 向量搜索结果 =====
+        if _DIAG_MODE:
+            print(f"\n{'='*60}")
+            print(f"[DIAG] 检索管道诊断 - 查询: '{query}'")
+            print(f"{'='*60}")
+            print(f"[DIAG-1] 图谱: {len(memory_fragment.nodes)} 节点, {len(memory_fragment.edges)} 边")
+            print(f"[DIAG-1] 向量搜索集合: {collections}")
+            for col, res in zip(collections, results):
+                if res:
+                    scores = [r.score for r in res[:5]]
+                    print(f"[DIAG-1]   {col}: {len(res)} 结果, Top-5 距离: {scores}")
+                else:
+                    print(f"[DIAG-1]   {col}: 0 结果 (空或集合不存在)")
+
         if all(not item for item in results):
+            if _DIAG_MODE:
+                print(f"[DIAG-1] ❌ 所有集合返回空! 检索终止.")
             return []
 
         # Final statistics
@@ -200,21 +219,66 @@ async def brute_force_triplet_search(
         edge_distances = node_distances.get("EdgeType_relationship_name", None)
 
         await memory_fragment.map_vector_distances_to_graph_nodes(node_distances=node_distances)
+
+        # ===== 诊断点 2: 节点距离映射 =====
+        if _DIAG_MODE:
+            nodes_with_dist = sum(
+                1 for n in memory_fragment.nodes.values()
+                if n.attributes.get("vector_distance") is not None
+                and n.attributes.get("vector_distance") != float("inf")
+            )
+            print(f"\n[DIAG-2] 节点距离映射: {nodes_with_dist}/{len(memory_fragment.nodes)} 节点有 vector_distance")
+            # 显示有距离的前 10 个节点
+            dist_nodes = [
+                (n.attributes.get("name", n.id), n.attributes.get("vector_distance"), n.attributes.get("type", ""))
+                for n in memory_fragment.nodes.values()
+                if n.attributes.get("vector_distance") is not None
+                and n.attributes.get("vector_distance") != float("inf")
+            ]
+            dist_nodes.sort(key=lambda x: x[1])
+            for name, dist, ntype in dist_nodes[:10]:
+                print(f"[DIAG-2]   name='{name}' type='{ntype}' distance={dist:.4f}")
+
         await memory_fragment.map_vector_distances_to_graph_edges(
             vector_engine=vector_engine, query_vector=query_vector, edge_distances=edge_distances
         )
+
+        # ===== 诊断点 3: 进入 calculate_top_triplet_importances 之前 =====
+        if _DIAG_MODE:
+            print(f"\n[DIAG-3] 进入三元组重要性计算, similarity_threshold={similarity_threshold}")
 
         results = await memory_fragment.calculate_top_triplet_importances(
             k=top_k, similarity_threshold=similarity_threshold, query=query
         )
 
+        # ===== 诊断点 4: calculate_top_triplet_importances 结果 =====
+        if _DIAG_MODE:
+            print(f"\n[DIAG-4] 三元组重要性计算后: {len(results)} 条结果")
+            for i, edge in enumerate(results[:5]):
+                n1_name = edge.node1.attributes.get("name", "?")
+                n2_name = edge.node2.attributes.get("name", "?")
+                n1_dist = edge.node1.attributes.get("vector_distance", "inf")
+                n2_dist = edge.node2.attributes.get("vector_distance", "inf")
+                rel = edge.attributes.get("relationship_name", edge.attributes.get("relationship_type", "?"))
+                print(f"[DIAG-4]   [{i}] '{n1_name}'(d={n1_dist}) --[{rel}]--> '{n2_name}'(d={n2_dist})")
+
         # 应用质量评分和过滤
+        pre_quality_count = len(results) if results else 0
         if results and min_quality_score > 0:
             results = filter_low_quality_results(results, query, min_quality_score)
-        
+
+        # ===== 诊断点 5: 质量过滤后 =====
+        if _DIAG_MODE:
+            print(f"\n[DIAG-5] 质量过滤: {pre_quality_count} -> {len(results)} (min_quality_score={min_quality_score})")
+
         # 确保结果多样性
+        pre_diversity_count = len(results) if results else 0
         if results and ensure_diversity:
             results = ensure_result_diversity(results)
+
+        # ===== 诊断点 6: 多样性过滤后 =====
+        if _DIAG_MODE:
+            print(f"[DIAG-6] 多样性过滤: {pre_diversity_count} -> {len(results)}")
         
         # 应用 BGE-Reranker 精排（如果配置启用）
         search_config = get_module_config('search')
