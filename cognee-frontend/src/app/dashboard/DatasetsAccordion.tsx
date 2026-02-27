@@ -200,7 +200,12 @@ export default function DatasetsAccordion({
         await getDatasetData(dataset.id);
 
         return cognifyDataset(dataset, useCloud)
-          .finally(() => {
+          .then(() => {
+            setProcessingDataset(null);
+            // 跳转到数据集详情页，自动轮询处理进度
+            router.push(`/datasets/${dataset.id}?processing=true`);
+          })
+          .catch(() => {
             setProcessingDataset(null);
           });
       })

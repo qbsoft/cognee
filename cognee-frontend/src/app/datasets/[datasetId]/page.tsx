@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import apiFetch from "@/utils/fetch";
 import { CTAButton, GhostButton } from "@/ui/elements";
 import { LoadingIndicator } from "@/ui/App";
@@ -112,6 +112,7 @@ export default function DatasetDetailPage({ params }: DatasetDetailPageProps) {
 // Client Component
 function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [files, setFiles] = useState<DataFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +121,8 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [pollingIntervalId, setPollingIntervalId] = useState<NodeJS.Timeout | null>(null);
+  const [autoPolling, setAutoPolling] = useState(false);
+  const autoPollingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [processingProgress, setProcessingProgress] = useState<{
     total: number;
     completed: number;
@@ -169,6 +172,59 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
     loadDataset();
     loadFiles();
   }, [loadDataset, loadFiles]);
+
+  // 从上传/处理页面导航过来时，自动启动轮询
+  useEffect(() => {
+    if (searchParams.get("processing") === "true") {
+      setAutoPolling(true);
+    }
+  }, [searchParams]);
+
+  // 自动轮询逻辑：每 3 秒刷新一次文件状态，直到所有阶段完成
+  useEffect(() => {
+    if (!autoPolling) return;
+
+    // 检查是否还有文件处于处理中状态
+    const stages = ["parsing", "chunking", "graph_indexing", "vector_indexing"] as const;
+    const hasProcessingFiles = files.some((file) =>
+      stages.some((stage) => {
+        const s = file.pipeline_status?.[stage]?.status;
+        return s === "in_progress" || s === "pending";
+      })
+    );
+    const hasCompletedFiles = files.some((file) =>
+      stages.some((stage) => {
+        const s = file.pipeline_status?.[stage]?.status;
+        return s === "completed" || s === "failed";
+      })
+    );
+
+    // 所有文件都已处理完，停止自动轮询
+    if (!hasProcessingFiles && hasCompletedFiles) {
+      setAutoPolling(false);
+      return;
+    }
+
+    // 继续轮询
+    autoPollingTimerRef.current = setTimeout(() => {
+      loadFiles();
+    }, 3000);
+
+    return () => {
+      if (autoPollingTimerRef.current) {
+        clearTimeout(autoPollingTimerRef.current);
+      }
+    };
+  }, [autoPolling, files, loadFiles]);
+
+  // 组件卸载时清理自动轮询定时器
+  useEffect(() => {
+    return () => {
+      if (autoPollingTimerRef.current) {
+        clearTimeout(autoPollingTimerRef.current);
+      }
+    };
+  }, []);
 
   const toggleFileSelection = (fileId: string) => {
     setSelectedFiles(prev => {
@@ -570,10 +626,10 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
               <span className="text-sm text-gray-600">
                 已选择 <span className="font-bold text-indigo-600">{selectedFiles.size}</span> 个文件
               </span>
-              {isPolling && (
+              {(isPolling || autoPolling) && (
                 <span className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
                   <LoadingIndicator />
-                  <span>正在监控处理进度...</span>
+                  <span>{isPolling ? "正在监控处理进度..." : "处理中，自动刷新..."}</span>
                 </span>
               )}
             </div>

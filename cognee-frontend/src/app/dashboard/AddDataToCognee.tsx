@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "next/navigation";
 
 import { LoadingIndicator } from "@/ui/App";
 import { useModal } from "@/ui/elements/Modal";
@@ -20,6 +21,7 @@ interface AddDataToCogneeProps {
 
 export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetData, useCloud = false }: AddDataToCogneeProps) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [filesForUpload, setFilesForUpload] = useState<File[]>([]);
 
   const addFiles = useCallback((event: FormEvent<HTMLInputElement>) => {
@@ -74,8 +76,8 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
         )
           .then(() => {
             setFilesForUpload([]);
-            // Show success feedback
-            alert(`Data successfully added to dataset "${dataset_name}"!`);
+            // 跳转到数据集详情页，自动轮询处理进度
+            router.push(`/datasets/${dataset_id}?processing=true`);
           });
       })
       .catch((error) => {
@@ -83,7 +85,7 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
         alert(`Failed to add data: ${error.message}`);
         throw error;
       });
-  }, [filesForUpload, refreshDatasets, useCloud]);
+  }, [filesForUpload, refreshDatasets, useCloud, router]);
 
   const {
     isModalOpen: isAddDataModalOpen,

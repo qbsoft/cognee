@@ -16,7 +16,7 @@ export default async function cognifyDataset(dataset: Dataset, useCloud: boolean
     },
     body: JSON.stringify({
       datasetIds: [dataset.id],
-      runInBackground: false,
+      runInBackground: true,
     }),
   }, useCloud)
   .then((response) => response.json());
