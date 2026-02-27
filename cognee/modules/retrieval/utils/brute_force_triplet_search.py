@@ -122,7 +122,7 @@ async def brute_force_triplet_search(
     node_type: Optional[Type] = None,
     node_name: Optional[List[str]] = None,
     similarity_threshold: float = 0.7,
-    min_quality_score: float = 0.6,
+    min_quality_score: float = 0.3,
     ensure_diversity: bool = True,
 ) -> List[Edge]:
     """
@@ -205,7 +205,7 @@ async def brute_force_triplet_search(
 
         if all(not item for item in results):
             if _DIAG_MODE:
-                print(f"[DIAG-1] ❌ 所有集合返回空! 检索终止.")
+                print(f"[DIAG-1] FAIL: all collections returned empty! Search terminated.")
             return []
 
         # Final statistics
@@ -264,12 +264,23 @@ async def brute_force_triplet_search(
 
         # 应用质量评分和过滤
         pre_quality_count = len(results) if results else 0
+        # ===== 诊断点 5: 显示每条边的质量分数（过滤前）=====
+        if _DIAG_MODE and results:
+            from cognee.modules.retrieval.utils.result_quality_scorer import rank_results_by_quality
+            scored_preview = rank_results_by_quality(results, query)
+            print(f"\n[DIAG-5] 质量分数预览 (阈值={min_quality_score}):")
+            for edge, sc in scored_preview:
+                n1_name = edge.node1.attributes.get("name", "") or edge.node1.attributes.get("text", "")[:30]
+                n2_name = edge.node2.attributes.get("name", "")
+                rel = edge.attributes.get("relationship_name", "?")
+                will_keep = "KEEP" if sc >= min_quality_score else "DROP"
+                print(f"[DIAG-5]   [{will_keep}] score={sc:.3f} | '{n1_name}' --[{rel}]--> '{n2_name}'")
+
         if results and min_quality_score > 0:
             results = filter_low_quality_results(results, query, min_quality_score)
 
-        # ===== 诊断点 5: 质量过滤后 =====
         if _DIAG_MODE:
-            print(f"\n[DIAG-5] 质量过滤: {pre_quality_count} -> {len(results)} (min_quality_score={min_quality_score})")
+            print(f"[DIAG-5] 质量过滤: {pre_quality_count} -> {len(results)} (min_quality_score={min_quality_score})")
 
         # 确保结果多样性
         pre_diversity_count = len(results) if results else 0

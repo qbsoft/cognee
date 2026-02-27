@@ -50,6 +50,15 @@ class DoclingLoader(LoaderInterface):
         """Unique identifier for this loader."""
         return "docling_loader"
 
+    @staticmethod
+    def _is_docling_available() -> bool:
+        """Check if docling is installed and importable."""
+        try:
+            import docling  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def can_handle(self, extension: str, mime_type: str) -> bool:
         """
         Check if this loader can handle the given file.
@@ -59,8 +68,12 @@ class DoclingLoader(LoaderInterface):
             mime_type: MIME type of the file
 
         Returns:
-            True if this loader can process the file, False otherwise
+            True if this loader can process the file, False otherwise.
+            Returns False if docling is not installed, allowing fallback to
+            other loaders (e.g., unstructured_loader for docx files).
         """
+        if not self._is_docling_available():
+            return False
         if extension in self.supported_extensions and mime_type in self.supported_mime_types:
             return True
         return False

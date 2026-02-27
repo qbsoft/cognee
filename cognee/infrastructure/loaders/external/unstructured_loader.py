@@ -1,3 +1,6 @@
+import asyncio
+import shutil
+from pathlib import Path
 from typing import List
 from cognee.infrastructure.loaders.LoaderInterface import LoaderInterface
 from cognee.shared.logging_utils import get_logger
@@ -5,6 +8,16 @@ from cognee.infrastructure.files.storage import get_file_storage, get_storage_co
 from cognee.infrastructure.files.utils.get_file_metadata import get_file_metadata
 
 logger = get_logger(__name__)
+
+# Formats that require LibreOffice for local processing
+_LIBREOFFICE_REQUIRED_EXTS = {"doc", "odt", "xls", "ods", "ppt", "odp", "rtf"}
+
+def _has_libreoffice() -> bool:
+    """Check if LibreOffice is available on the system."""
+    return (
+        shutil.which("soffice") is not None
+        or shutil.which("libreoffice") is not None
+    )
 
 
 class UnstructuredLoader(LoaderInterface):
@@ -92,6 +105,15 @@ class UnstructuredLoader(LoaderInterface):
         try:
             logger.info(f"Processing document: {file_path}")
 
+            # Check if this format needs LibreOffice and it's not available
+            ext = Path(file_path).suffix.lstrip(".").lower()
+            if ext in _LIBREOFFICE_REQUIRED_EXTS and not _has_libreoffice():
+                raise RuntimeError(
+                    f"Cannot process .{ext} file: LibreOffice is not installed. "
+                    f"Please install LibreOffice or convert the file to .docx/.pdf format first. "
+                    f"On Windows: https://www.libreoffice.org/download/"
+                )
+
             with open(file_path, "rb") as f:
                 file_metadata = await get_file_metadata(f)
             # Name ingested file of current loader based on original file content hash
@@ -100,8 +122,19 @@ class UnstructuredLoader(LoaderInterface):
             # Set partitioning parameters
             partition_kwargs = {"filename": file_path, "strategy": strategy, **kwargs}
 
-            # Use partition to extract elements
-            elements = partition(**partition_kwargs)
+            # Run partition in thread with timeout to avoid hanging on network calls
+            loop = asyncio.get_event_loop()
+            try:
+                elements = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: partition(**partition_kwargs)),
+                    timeout=60.0,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"Document processing timed out for {file_path}. "
+                    f"The file may require LibreOffice or network access. "
+                    f"Try converting to .docx or .pdf format."
+                )
 
             # Process elements into text content
             text_parts = []

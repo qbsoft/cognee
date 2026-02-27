@@ -352,7 +352,7 @@ class CogneeGraph(CogneeAbstractGraph):
                 f"No relevant edges found with similarity threshold {similarity_threshold}. "
                 "This may indicate that the query is not related to any nodes in the graph."
             )
-            print(f"[DIAG-GRAPH] ❌ 没有边通过 is_relevant 过滤! 所有结果被丢弃!")
+            print(f"[DIAG-GRAPH] FAIL: no edges passed is_relevant filter! All results discarded!")
             # 显示最接近阈值的边以辅助调试
             near_threshold_edges = []
             for edge in self.edges:
@@ -382,7 +382,7 @@ class CogneeGraph(CogneeAbstractGraph):
                 print(f"[DIAG-GRAPH]   '{n1_name}'(d={n1_d}) --[{rel}]--> '{n2_name}'(d={n2_d})")
             return []
 
-        print(f"[DIAG-GRAPH] ✓ {len(relevant_edges)} 条边通过 is_relevant 过滤")
+        print(f"[DIAG-GRAPH] OK {len(relevant_edges)} edges passed is_relevant filter")
         logger.info(
             f"Filtered {len(self.edges)} edges to {len(relevant_edges)} relevant edges "
             f"(threshold: {similarity_threshold}), selecting top {k}"

@@ -119,7 +119,8 @@ class OcrEnhancedImageLoader(LoaderInterface):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         ocr_engine = kwargs.get("ocr_engine", "paddleocr")
-        enable_vision_llm = kwargs.get("enable_vision_llm", True)
+        # Default to False: use local OCR only, avoid cloud LLM API calls for images
+        enable_vision_llm = kwargs.get("enable_vision_llm", False)
 
         # Step 1: OCR base extraction
         ocr_text = await self._ocr_extract(file_path, engine=ocr_engine)

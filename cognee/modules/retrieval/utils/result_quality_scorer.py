@@ -82,21 +82,33 @@ def calculate_result_relevance_score(
     # 2. 文本匹配度（0.3）
     node_name = result_node.attributes.get("name", "")
     node_description = result_node.attributes.get("description", "")
-    
+    node_text = result_node.attributes.get("text", "")  # DocumentChunk 节点将内容存在 text 属性
+
     # 计算查询与节点名称的匹配度
     name_similarity = 0.0
     if node_name:
         name_similarity = calculate_text_similarity(query, str(node_name))
-    
+
     # 计算查询与节点描述的匹配度
     desc_similarity = 0.0
     if node_description:
         desc_similarity = calculate_text_similarity(query, str(node_description))
-    
-    # 取名称和描述匹配度的最大值
-    text_score = max(name_similarity, desc_similarity * 0.8)  # 描述匹配度权重稍低
+
+    # 计算查询与节点文本内容的匹配度（专门处理 DocumentChunk 节点）
+    # 对于长文本，使用关键词匹配而非 SequenceMatcher（避免因文本过长导致分数偏低）
+    text_content_similarity = 0.0
+    if node_text and not node_name:
+        query_terms = [t for t in query.lower().split() if len(t) > 1]
+        if query_terms:
+            text_lower = str(node_text).lower()
+            matched_terms = sum(1 for term in query_terms if term in text_lower)
+            # 按关键词命中率计分，最高给 0.7（留余量区分精确匹配）
+            text_content_similarity = (matched_terms / len(query_terms)) * 0.7
+
+    # 取名称、描述、文本内容匹配度的最大值
+    text_score = max(name_similarity, desc_similarity * 0.8, text_content_similarity)
     score += text_score * 0.3
-    
+
     # 3. 上下文相关性（0.2）
     # 如果节点有质量分数，使用它作为上下文相关性的指标
     quality_score = result_node.attributes.get("quality_score", None)
@@ -106,7 +118,8 @@ def calculate_result_relevance_score(
         # 如果没有质量分数，基于节点属性完整性估算
         has_name = bool(node_name)
         has_description = bool(node_description)
-        context_score = 0.5 if (has_name or has_description) else 0.2
+        has_text = bool(node_text)  # DocumentChunk 节点有 text 内容也算有效
+        context_score = 0.5 if (has_name or has_description or has_text) else 0.2
     score += context_score * 0.2
     
     # 4. 连接度（0.1）
