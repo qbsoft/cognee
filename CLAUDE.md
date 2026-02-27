@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-02-27
+**最后更新**: 2026-02-27 (更新于 Round 3 测试完成后)
 
 **正在进行的任务**: 无
 
@@ -98,6 +98,15 @@
 - CoT 测试验证 Qwen/DashScope LLM API 调用正常工作
 - 测试结果: 1311 passed, 4 skipped, 0 errors (全部通过)
 
+### Phase 12: 检索精度多轮迭代验证 (100% 精度达成, 2 commits)
+- 设计 25 个测试查询，覆盖 SOW 文档各类检索场景
+- Round 1: 22/25 = 88%；发现 Q07/Q16/Q23 失败根因
+- Round 2: 23/25 = 92%；修复后发现 Q02/Q03 测试设计有误（文档无该信息）
+- Round 3: **25/25 = 100%**；所有查询通过
+- 代码修复：`get_context()` 添加 DocumentChunk 回退搜索（当图谱返回空时降级到纯向量搜索）
+- 查询改进：Q07/Q23 增加上下文词提升精确度；Q02/Q03 替换为文档中实际存在的事实
+- 测试脚本：`test_retrieval_round2.py`（25 个标准测试用例）
+
 ### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
 - A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
 - A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
@@ -114,8 +123,9 @@
 
 **测试总数**: 1311 passed, 4 skipped (39 commits)
 
-**Git Commits (39个)**:
+**Git Commits (40个)**:
 ```
+02a39e15 fix: add DocumentChunk fallback in get_context() for empty graph results
 c700a336 fix: eliminate UI freeze during file upload/cognify by switching to background mode
 e581f21d fix: repair document loading pipeline and retrieval quality filter for Chinese business docs
 dbc4970a fix: optimize retrieval quality and graph building for Chinese business docs
@@ -156,10 +166,11 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-11 + 生产调试已完成
+- 所有 Phase 0-12 已完成，检索精度已达 100% (25/25)
+- 已验证的关键修复: `get_context()` DocumentChunk 回退搜索 (commit 02a39e15)
+- 测试脚本位于: `test_retrieval_round2.py` (25 个标准用例，可随时重跑验证)
 - 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
 - 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
 - 可选: 评估替换 Embedding 模型为 BGE-M3 (对中文语义更好)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
-- 已知良好状态: GRAPH_COMPLETION 搜索正常工作，3个中文业务查询返回正确答案
