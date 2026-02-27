@@ -26,6 +26,7 @@ from cognee.modules.retrieval.code_retriever import CodeRetriever
 from cognee.modules.retrieval.cypher_search_retriever import CypherSearchRetriever
 from cognee.modules.retrieval.natural_language_retriever import NaturalLanguageRetriever
 from cognee.modules.search.retrievers.HybridRetriever import HybridRetriever
+from cognee.infrastructure.config.yaml_config import get_module_config
 
 
 async def get_search_type_tools(
@@ -159,7 +160,9 @@ async def get_search_type_tools(
             CodingRulesRetriever(rules_nodeset_name=node_name).get_existing_rules,
         ],
         SearchType.HYBRID_SEARCH: (
-            lambda _hr=HybridRetriever(
+            lambda _search_cfg=get_module_config('search').get('search', {}),
+                   _hybrid_cfg=get_module_config('search').get('search', {}).get('hybrid', {}),
+                   _hr=HybridRetriever(
                 vector_retriever=ChunksRetriever(top_k=top_k).get_completion,
                 graph_retriever=GraphCompletionRetriever(
                     top_k=top_k,
@@ -170,9 +173,15 @@ async def get_search_type_tools(
                     save_interaction=save_interaction,
                 ).get_completion,
                 lexical_retriever=JaccardChunksRetriever(top_k=top_k).get_completion,
-                top_k=top_k,
+                weights={
+                    'vector': get_module_config('search').get('search', {}).get('hybrid', {}).get('strategies', {}).get('vector', {}).get('weight', 0.4),
+                    'graph': get_module_config('search').get('search', {}).get('hybrid', {}).get('strategies', {}).get('graph', {}).get('weight', 0.3),
+                    'lexical': get_module_config('search').get('search', {}).get('hybrid', {}).get('strategies', {}).get('lexical', {}).get('weight', 0.3),
+                },
+                top_k=get_module_config('search').get('search', {}).get('hybrid', {}).get('top_k', top_k),
             ): [
                 _hr.get_completion,
+                _hr.get_context,
             ]
         )(),
     }

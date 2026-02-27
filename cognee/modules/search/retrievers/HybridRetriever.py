@@ -133,6 +133,19 @@ class HybridRetriever:
 
         return fused[: self._top_k]
 
+    async def get_context(self, query: str, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Execute hybrid retrieval and return fused context (for graph visualization).
+
+        Args:
+            query: The search query string.
+            **kwargs: Additional keyword arguments passed to each retriever.
+
+        Returns:
+            Fused and ranked list of context results.
+        """
+        return await self.get_completion(query, **kwargs)
+
     async def _safe_retrieve(self, retriever, query: str, **kwargs) -> List[Dict[str, Any]]:
         """Safely call a retriever, returning empty list on failure."""
         try:

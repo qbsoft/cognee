@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.llm_interface import (
     LLMInterface,
 )
+from cognee.infrastructure.llm.config import get_llm_config
 from cognee.infrastructure.files.utils.open_data_file import open_data_file
 from cognee.shared.logging_utils import get_logger
 from tenacity import (
@@ -99,6 +100,7 @@ class OllamaAPIAdapter(LLMInterface):
             ],
             max_retries=5,
             response_model=response_model,
+            temperature=get_llm_config().llm_temperature,
         )
 
         return response

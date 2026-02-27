@@ -25,6 +25,7 @@ from cognee.infrastructure.llm.exceptions import (
 from cognee.infrastructure.files.utils.open_data_file import open_data_file
 from cognee.modules.observability.get_observe import get_observe
 from cognee.shared.logging_utils import get_logger
+from cognee.infrastructure.llm.config import get_llm_config
 
 logger = get_logger()
 
@@ -149,6 +150,7 @@ class OpenAIAdapter(LLMInterface):
                 api_version=self.api_version,
                 response_model=response_model,
                 max_retries=self.MAX_RETRIES,
+                temperature=get_llm_config().llm_temperature,
             )
         except (
             ContentFilterFinishReasonError,
@@ -174,6 +176,7 @@ class OpenAIAdapter(LLMInterface):
                     # api_base=self.fallback_endpoint,
                     response_model=response_model,
                     max_retries=self.MAX_RETRIES,
+                    temperature=get_llm_config().llm_temperature,
                 )
             except (
                 ContentFilterFinishReasonError,
@@ -239,6 +242,7 @@ class OpenAIAdapter(LLMInterface):
             api_version=self.api_version,
             response_model=response_model,
             max_retries=self.MAX_RETRIES,
+            temperature=get_llm_config().llm_temperature,
         )
 
     @retry(

@@ -79,4 +79,5 @@ class AnthropicAdapter(LLMInterface):
                 }
             ],
             response_model=response_model,
+            temperature=get_llm_config().llm_temperature,
         )

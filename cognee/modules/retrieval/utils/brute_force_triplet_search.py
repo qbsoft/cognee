@@ -18,6 +18,7 @@ from cognee.modules.retrieval.utils.result_quality_scorer import (
 from cognee.modules.retrieval.utils.result_diversity import (
     ensure_result_diversity,
 )
+from cognee.infrastructure.config.yaml_config import get_module_config
 
 logger = get_logger(level=ERROR)
 
@@ -118,7 +119,7 @@ async def brute_force_triplet_search(
     memory_fragment: Optional[CogneeGraph] = None,
     node_type: Optional[Type] = None,
     node_name: Optional[List[str]] = None,
-    similarity_threshold: float = 0.5,
+    similarity_threshold: float = 0.7,
     min_quality_score: float = 0.6,
     ensure_diversity: bool = True,
 ) -> List[Edge]:
@@ -174,7 +175,7 @@ async def brute_force_triplet_search(
     async def search_in_collection(collection_name: str):
         try:
             return await vector_engine.search(
-                collection_name=collection_name, query_vector=query_vector, limit=None
+                collection_name=collection_name, query_vector=query_vector, limit=max(top_k * 10, 50)
             )
         except CollectionNotFoundError:
             return []
@@ -216,6 +217,46 @@ async def brute_force_triplet_search(
         if results and ensure_diversity:
             results = ensure_result_diversity(results)
         
+        # 应用 BGE-Reranker 精排（如果配置启用）
+        search_config = get_module_config('search')
+        reranking_config = search_config.get('search', {}).get('reranking', {})
+        reranking_enabled = reranking_config.get('enabled', False)
+
+        if results and reranking_enabled:
+            try:
+                from cognee.modules.search.reranking.reranker import rerank
+                # 将 Edge 对象转换为 reranker 需要的 dict 格式
+                edge_dicts = []
+                for edge in results:
+                    text_parts = []
+                    if hasattr(edge, 'node1') and hasattr(edge.node1, 'attributes'):
+                        n1 = edge.node1.attributes
+                        text_parts.append(n1.get('name', '') or '')
+                        text_parts.append(n1.get('description', '') or '')
+                    if hasattr(edge, 'attributes'):
+                        text_parts.append(edge.attributes.get('relationship_name', '') or '')
+                    if hasattr(edge, 'node2') and hasattr(edge.node2, 'attributes'):
+                        n2 = edge.node2.attributes
+                        text_parts.append(n2.get('name', '') or '')
+                        text_parts.append(n2.get('description', '') or '')
+                    edge_dicts.append({
+                        'text': ' '.join(filter(None, text_parts)),
+                        'edge': edge,
+                    })
+
+                reranked = await rerank(
+                    query=query,
+                    results=edge_dicts,
+                    top_k=top_k,
+                    text_field='text',
+                )
+                results = [item['edge'] for item in reranked if 'edge' in item]
+                logger.info(f'Reranker applied: {len(results)} results after reranking')
+            except ImportError:
+                logger.warning('FlagEmbedding not installed, skipping reranking')
+            except Exception as e:
+                logger.warning(f'Reranking failed ({e}), using original order')
+
         # 如果结果数量超过top_k，只返回前top_k个
         if len(results) > top_k:
             # 重新排序以确保返回最高质量的结果

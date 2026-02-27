@@ -93,6 +93,7 @@ class MistralAdapter(LLMInterface):
                     max_retries=5,
                     messages=messages,
                     response_model=response_model,
+                    temperature=get_llm_config().llm_temperature,
                 )
                 if response.choices and response.choices[0].message.content:
                     content = response.choices[0].message.content

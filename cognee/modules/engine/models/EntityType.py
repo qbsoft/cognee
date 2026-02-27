@@ -13,4 +13,4 @@ class EntityType(DataPoint):
     name: str
     description: str
 
-    metadata: dict = {"index_fields": ["name"]}
+    metadata: dict = {"index_fields": ["name", "description"]}

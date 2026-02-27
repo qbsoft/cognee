@@ -9,6 +9,7 @@ from litellm.exceptions import ContentPolicyViolationError
 from instructor.core import InstructorRetryException
 
 from cognee.infrastructure.llm.exceptions import ContentPolicyFilterError
+from cognee.infrastructure.llm.config import get_llm_config
 from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.llm_interface import (
     LLMInterface,
 )
@@ -115,6 +116,7 @@ class GenericAPIAdapter(LLMInterface):
                 api_key=self.api_key,
                 api_base=self.endpoint,
                 response_model=response_model,
+                temperature=get_llm_config().llm_temperature,
             )
         except (
             ContentFilterFinishReasonError,
@@ -149,6 +151,7 @@ class GenericAPIAdapter(LLMInterface):
                     api_key=self.fallback_api_key,
                     api_base=self.fallback_endpoint,
                     response_model=response_model,
+                    temperature=get_llm_config().llm_temperature,
                 )
             except (
                 ContentFilterFinishReasonError,

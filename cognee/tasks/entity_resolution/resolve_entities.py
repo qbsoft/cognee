@@ -100,9 +100,35 @@ def _should_merge(entity_a: Dict, entity_b: Dict, threshold: float) -> bool:
 
 
 def _name_similarity(name_a: str, name_b: str) -> float:
+    """计算名称相似度，支持中文人名职务后缀匹配。"""
     if not name_a or not name_b:
         return 0.0
-    return SequenceMatcher(None, name_a.lower(), name_b.lower()).ratio()
+    
+    # 基础相似度
+    base_sim = SequenceMatcher(None, name_a.lower(), name_b.lower()).ratio()
+    
+    # 中文人名增强：去除职务后缀后比较
+    has_chinese = any(
+        "一" <= ch <= "鿿" for ch in name_a + name_b
+    )
+    if has_chinese:
+        from cognee.modules.graph.utils.entity_normalization import (
+            extract_chinese_core_name,
+        )
+        core_a = extract_chinese_core_name(name_a)
+        core_b = extract_chinese_core_name(name_b)
+        if core_a and core_b:
+            if core_a == core_b:
+                return 0.95
+            # 姓氏匹配 ("张总" -> "张" matches "张明")
+            if len(core_a) == 1 and core_b.startswith(core_a):
+                return 0.85
+            if len(core_b) == 1 and core_a.startswith(core_b):
+                return 0.85
+            core_sim = SequenceMatcher(None, core_a, core_b).ratio()
+            base_sim = max(base_sim, core_sim)
+    
+    return base_sim
 
 
 def _merge_entity_group(entities: List[Dict[str, Any]]) -> Dict[str, Any]:

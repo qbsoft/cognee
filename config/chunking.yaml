@@ -1,12 +1,7 @@
 chunking:
   default_strategy: semantic
-  chunk_size: 1500
-  chunk_overlap: 100
-  llm_enhanced: false
-  overrides:
-    code:
-      strategy: code
-      chunk_size: 2000
-    spreadsheet:
-      strategy: exact
-      chunk_size: 500
+  chunk_size: 512
+  chunk_overlap: 50
+  sentence_splitter: sentence
+  min_chunk_size: 100
+  max_chunk_size: 1024

@@ -273,11 +273,17 @@ async def get_default_tasks(  # TODO: Find out a better way to do this (Boris's 
     if chunks_per_batch is None:
         chunks_per_batch = 100
 
+    # Read chunk configuration from YAML (config/chunking.yaml)
+    chunk_config = get_module_config('chunking')
+    chunking = chunk_config.get('chunking', {})
+    configured_chunk_size = chunking.get('chunk_size', 512)
+    configured_overlap = chunking.get('chunk_overlap', 50)
+
     default_tasks = [
         Task(classify_documents),
         Task(
             extract_chunks_from_documents,
-            max_chunk_size=chunk_size or get_max_chunk_tokens(),
+            max_chunk_size=chunk_size or configured_chunk_size,
             chunker=chunker,
         ),  # Extract text chunks based on the document type.
         Task(
