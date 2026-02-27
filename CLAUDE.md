@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-02-26
+**最后更新**: 2026-02-27
 
 **正在进行的任务**: 无
 
@@ -112,10 +112,12 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1311 passed, 4 skipped (37 commits)
+**测试总数**: 1311 passed, 4 skipped (39 commits)
 
-**Git Commits (37个)**:
+**Git Commits (39个)**:
 ```
+c700a336 fix: eliminate UI freeze during file upload/cognify by switching to background mode
+e581f21d fix: repair document loading pipeline and retrieval quality filter for Chinese business docs
 dbc4970a fix: optimize retrieval quality and graph building for Chinese business docs
 05f376fa fix: add similarity_threshold to CoT retriever and fix graph completion tests
 8c64fb85 fix: add similarity_threshold param to retrievers and fix graph completion tests
@@ -154,9 +156,10 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-11 已完成，项目进入调试验证阶段
+- 所有 Phase 0-11 + 生产调试已完成
 - 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
 - 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
 - 可选: 评估替换 Embedding 模型为 BGE-M3 (对中文语义更好)
 - 可选: 进一步提升测试覆盖率、添加 E2E 集成测试
+- 已知良好状态: GRAPH_COMPLETION 搜索正常工作，3个中文业务查询返回正确答案
