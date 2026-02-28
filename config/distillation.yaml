@@ -1,0 +1,21 @@
+# Knowledge Distillation Configuration
+# Auto-generates cross-chunk aggregated knowledge during cognify to improve retrieval precision.
+# This eliminates the need for manually created supplementary knowledge files.
+
+distillation:
+  # Enable/disable knowledge distillation in the cognify pipeline
+  enabled: true
+
+  # Maximum characters per LLM distillation call
+  # Documents exceeding this limit are processed hierarchically (map-reduce)
+  # ~4 chars/token, so 24000 chars ≈ 6000 tokens
+  context_char_limit: 24000
+
+  # Types of knowledge distillation to generate
+  # Remove items from this list to skip specific types
+  types:
+    - enumeration      # Complete lists, categories, numbered items
+    - aggregation      # Key numbers, quantities, thresholds, versions
+    - disambiguation   # Clarify easily confused concepts
+    - negation         # Important information NOT in the document
+    - qa               # Question-answer pairs for common queries

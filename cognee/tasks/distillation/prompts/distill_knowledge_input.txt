@@ -1,0 +1,10 @@
+Analyze the following document content and generate knowledge distillations.
+
+**Document Content:**
+{{ document_text }}
+
+Generate a comprehensive set of knowledge distillations covering ALL important information in the document. Be thorough - extract every list, every key number, every potential confusion point, every notable absence, and every key fact as Q&A.
+
+Return your response as a JSON array where each item has:
+- "type": one of "enumeration", "aggregation", "disambiguation", "negation", "qa"
+- "text": the distilled knowledge content (in the same language as the source document)

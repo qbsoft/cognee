@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-02-28
+**最后更新**: 2026-02-28 (Phase 14 完成)
 
 **正在进行的任务**: 无
 
@@ -114,6 +114,17 @@
 - Q21 GT简化后从0.70→1.00（避免过高期望系统检索到非显著信息）
 - lgl-facts 成功建立：243边 + 197向量（4个collection）
 
+### Phase 14: Auto Knowledge Distillation 自动知识蒸馏 (6 new files, 1 modified, 40 tests)
+- 新建 `KnowledgeDistillation` DataPoint 模型 (index_fields=["text"] 自动向量索引)
+- 实现 `distill_knowledge` 管道任务：自动生成 5 类蒸馏知识 (enumeration/aggregation/disambiguation/negation/qa)
+- 支持大文档分层蒸馏 (map-reduce 模式，超出 context_char_limit 自动分批+合并)
+- 中英双语 Prompt 模板 (distill_knowledge_system.txt + distill_knowledge_input.txt)
+- YAML 配置控制 (config/distillation.yaml, enabled=true/false)
+- 条件注入到 cognify 管道 (在 extract_graph 之后、summarize_text 之前)
+- 关键修复：使用 `response_model=str` 避免 instructor JSON schema 注入导致 DashScope Connection error
+- E2E 验证成功：cognify 生成 **34 个 KnowledgeDistillation 向量**，搜索距离 0.0-0.385
+- 单元测试：40 tests passed (含 11 个 JSON 解析测试 + 2 个边界情况测试)
+
 ### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
 - A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
 - A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
@@ -128,10 +139,13 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1311 passed, 4 skipped (39 commits)
+**测试总数**: 1351 passed, 4 skipped (41 commits)
 
-**Git Commits (40个)**:
+**Git Commits (42个)**:
 ```
+(pending) feat: add auto knowledge distillation module for cognify pipeline
+95fea5a2 eval: add RAGAS LLM-as-Judge evaluation achieving 95.1% precision
+eba4bc89 docs: update progress notes - Phase 12 retrieval precision 100% achieved
 02a39e15 fix: add DocumentChunk fallback in get_context() for empty graph results
 c700a336 fix: eliminate UI freeze during file upload/cognify by switching to background mode
 e581f21d fix: repair document loading pipeline and retrieval quality filter for Chinese business docs
@@ -173,11 +187,14 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-13 已完成，RAGAS LLM-as-Judge 综合精度已达 **95.1%** ✅
+- 所有 Phase 0-14 已完成 ✅
+- **Auto Knowledge Distillation 模块已完成并验证** (Phase 14)
+  - cognify 时自动生成 34 个 KnowledgeDistillation 向量，搜索距离优秀 (0.0-0.385)
+  - 配置: `config/distillation.yaml` (enabled: true/false)
+  - 单元测试: 40 tests passed
+- RAGAS LLM-as-Judge 综合精度: **95.1%** (test_retrieval_ragas_style.py)
 - 关键词精度: 25/25 = 100% (test_retrieval_round2.py)
-- LLM评分精度: 95.1% (test_retrieval_ragas_style.py，8轮迭代)
-- lgl-facts 补充文档：`temp_facts_summary.md`，已 cognify (243边 + 197向量)
-- 已验证的关键修复: `get_context()` DocumentChunk 回退搜索 (commit 02a39e15)
+- 待验证: 用原始 SOW DOCX 重新 cognify (不含 lgl-facts)，运行 RAGAS 评测验证自动蒸馏是否达到 >= 93% 精度
 - 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
 - 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)

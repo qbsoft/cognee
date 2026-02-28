@@ -27,6 +27,7 @@ from cognee.tasks.storage import add_data_points
 from cognee.tasks.summarization import summarize_text
 from cognee.tasks.graph_validation import validate_extracted_graph
 from cognee.tasks.entity_resolution import resolve_entities
+from cognee.tasks.distillation import distill_knowledge
 from cognee.infrastructure.config.yaml_config import get_module_config
 from cognee.modules.pipelines.layers.pipeline_execution_mode import get_pipeline_executor
 from cognee.tasks.temporal_graph.extract_events_and_entities import extract_events_and_timestamps
@@ -335,6 +336,29 @@ async def get_default_tasks(  # TODO: Find out a better way to do this (Boris's 
                 confidence_threshold=confidence_threshold,
             ),
         )
+
+    # Conditionally inject knowledge distillation task
+    # based on YAML configuration (distillation.yaml)
+    distillation_config = get_module_config("distillation")
+    distillation = distillation_config.get("distillation", {})
+    enable_distillation = distillation.get("enabled", False)
+
+    if enable_distillation:
+        context_char_limit = distillation.get("context_char_limit", 24000)
+        # Insert before summarize_text: find its position dynamically
+        summarize_idx = next(
+            (i for i, t in enumerate(default_tasks) if t.executable == summarize_text),
+            len(default_tasks) - 2,  # fallback: before add_data_points
+        )
+        default_tasks.insert(
+            summarize_idx,
+            Task(
+                distill_knowledge,
+                context_char_limit=context_char_limit,
+                task_config={"batch_size": 10000},  # All chunks in one batch for cross-chunk aggregation
+            ),
+        )
+        logger.info("Knowledge distillation task enabled in cognify pipeline")
 
     return default_tasks
 
