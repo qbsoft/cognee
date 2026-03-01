@@ -64,11 +64,19 @@ async def set_database_global_context_variables(dataset: Union[str, UUID], user_
         "vector_db_provider": "lancedb",
     }
 
+    from cognee.infrastructure.databases.graph.config import get_graph_config
+    global_graph_config = get_graph_config()
+
     graph_config = {
-        "graph_database_provider": "kuzu",
+        "graph_database_provider": global_graph_config.graph_database_provider,
         "graph_file_path": os.path.join(
             databases_directory_path, dataset_database.graph_database_name
         ),
+        "graph_database_url": global_graph_config.graph_database_url,
+        "graph_database_name": global_graph_config.graph_database_name,
+        "graph_database_username": global_graph_config.graph_database_username,
+        "graph_database_password": global_graph_config.graph_database_password,
+        "graph_database_port": global_graph_config.graph_database_port,
     }
 
     storage_config = {

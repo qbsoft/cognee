@@ -141,7 +141,7 @@ class Neo4jAdapter(GraphDBInterface):
 
             - bool: True if the node exists, otherwise False.
         """
-        results = self.query(
+        results = await self.query(
             f"""
                 MATCH (n:`{BASE_LABEL}`)
                 WHERE n.id = $node_id
@@ -166,19 +166,18 @@ class Neo4jAdapter(GraphDBInterface):
             The result of the query execution, typically the ID of the added node.
         """
         serialized_properties = self.serialize_properties(node.model_dump())
+        node_label = type(node).__name__
 
         query = dedent(
             f"""MERGE (node: `{BASE_LABEL}`{{id: $node_id}})
                 ON CREATE SET node += $properties, node.updated_at = timestamp()
                 ON MATCH SET node += $properties, node.updated_at = timestamp()
-                WITH node, $node_label AS label
-                CALL apoc.create.addLabels(node, [label]) YIELD node AS labeledNode
-                RETURN ID(labeledNode) AS internal_id, labeledNode.id AS nodeId"""
+                SET node:`{node_label}`
+                RETURN elementId(node) AS internal_id, node.id AS nodeId"""
         )
 
         params = {
             "node_id": str(node.id),
-            "node_label": type(node).__name__,
             "properties": serialized_properties,
         }
 
@@ -201,27 +200,30 @@ class Neo4jAdapter(GraphDBInterface):
 
             - None: None
         """
-        query = f"""
-        UNWIND $nodes AS node
-        MERGE (n: `{BASE_LABEL}`{{id: node.node_id}})
-        ON CREATE SET n += node.properties, n.updated_at = timestamp()
-        ON MATCH SET n += node.properties, n.updated_at = timestamp()
-        WITH n, node.label AS label
-        CALL apoc.create.addLabels(n, [label]) YIELD node AS labeledNode
-        RETURN ID(labeledNode) AS internal_id, labeledNode.id AS nodeId
-        """
-
-        nodes = [
-            {
+        # Group nodes by label to use native SET n:`Label` (no APOC needed)
+        from collections import defaultdict
+        label_groups = defaultdict(list)
+        for node in nodes:
+            label = type(node).__name__
+            label_groups[label].append({
                 "node_id": str(node.id),
-                "label": type(node).__name__,
                 "properties": self.serialize_properties(dict(node)),
-            }
-            for node in nodes
-        ]
+            })
 
-        results = await self.query(query, dict(nodes=nodes))
-        return results
+        all_results = []
+        for label, group_nodes in label_groups.items():
+            query = f"""
+            UNWIND $nodes AS node
+            MERGE (n: `{BASE_LABEL}`{{id: node.node_id}})
+            ON CREATE SET n += node.properties, n.updated_at = timestamp()
+            ON MATCH SET n += node.properties, n.updated_at = timestamp()
+            SET n:`{label}`
+            RETURN elementId(n) AS internal_id, n.id AS nodeId
+            """
+            results = await self.query(query, dict(nodes=group_nodes))
+            all_results.extend(results)
+
+        return all_results
 
     async def extract_node(self, node_id: str):
         """
@@ -325,9 +327,9 @@ class Neo4jAdapter(GraphDBInterface):
             - bool: True if the edge exists, otherwise False.
         """
         query = f"""
-            MATCH (from_node: `{BASE_LABEL}`)-[:`{edge_label}`]->(to_node: `{BASE_LABEL}`)
+            MATCH (from_node: `{BASE_LABEL}`)-[r:`{edge_label}`]->(to_node: `{BASE_LABEL}`)
             WHERE from_node.id = $from_node_id AND to_node.id = $to_node_id
-            RETURN COUNT(relationship) > 0 AS edge_exists
+            RETURN COUNT(r) > 0 AS edge_exists
         """
 
         params = {
@@ -336,7 +338,7 @@ class Neo4jAdapter(GraphDBInterface):
         }
 
         edge_exists = await self.query(query, params)
-        return edge_exists
+        return edge_exists[0]["edge_exists"] if edge_exists else False
 
     async def has_edges(self, edges):
         """
@@ -472,27 +474,14 @@ class Neo4jAdapter(GraphDBInterface):
 
             - None: None
         """
-        query = f"""
-            UNWIND $edges AS edge
-            MATCH (from_node: `{BASE_LABEL}`{{id: edge.from_node}})
-            MATCH (to_node: `{BASE_LABEL}`{{id: edge.to_node}})
-            CALL apoc.merge.relationship(
-                from_node,
-                edge.relationship_name,
-                {{
-                    source_node_id: edge.from_node,
-                    target_node_id: edge.to_node
-                }},
-                edge.properties,
-                to_node
-            ) YIELD rel
-            RETURN rel"""
-
-        edges = [
-            {
+        # Group edges by relationship type to use native MERGE (no APOC needed)
+        from collections import defaultdict
+        rel_groups = defaultdict(list)
+        for edge in edges:
+            rel_name = edge[2]
+            rel_groups[rel_name].append({
                 "from_node": str(edge[0]),
                 "to_node": str(edge[1]),
-                "relationship_name": edge[2],
                 "properties": self._flatten_edge_properties(
                     {
                         **(edge[3] if edge[3] else {}),
@@ -500,16 +489,26 @@ class Neo4jAdapter(GraphDBInterface):
                         "target_node_id": str(edge[1]),
                     }
                 ),
-            }
-            for edge in edges
-        ]
+            })
 
-        try:
-            results = await self.query(query, dict(edges=edges))
-            return results
-        except Neo4jError as error:
-            logger.error("Neo4j query error: %s", error, exc_info=True)
-            raise error
+        all_results = []
+        for rel_name, group_edges in rel_groups.items():
+            query = f"""
+                UNWIND $edges AS edge
+                MATCH (from_node: `{BASE_LABEL}`{{id: edge.from_node}})
+                MATCH (to_node: `{BASE_LABEL}`{{id: edge.to_node}})
+                MERGE (from_node)-[r:`{rel_name}`]->(to_node)
+                SET r += edge.properties
+                RETURN type(r) AS rel_type
+            """
+            try:
+                results = await self.query(query, dict(edges=group_edges))
+                all_results.extend(results)
+            except Neo4jError as error:
+                logger.error("Neo4j add_edges error for rel '%s': %s", rel_name, error, exc_info=True)
+                raise error
+
+        return all_results
 
     async def get_edges(self, node_id: str):
         """
