@@ -134,6 +134,29 @@ def _get_document_id(chunk: DocumentChunk) -> UUID:
     return chunk.id
 
 
+def _split_long_enumerations(items: List[DistillationItem]) -> List[DistillationItem]:
+    """
+    Split long enumeration items into summary + full versions.
+
+    For enumeration items exceeding 300 characters, generates an additional
+    summary item containing only the first line (typically the count/title).
+    This improves vector search matching: "how many X?" matches the short
+    summary, while "what are all the X?" matches the full list.
+    """
+    result = []
+    for item in items:
+        result.append(item)
+        if item.type == "enumeration" and len(item.text) > 300:
+            # Extract the first line as a summary
+            first_line = item.text.split("\n")[0].strip()
+            if first_line and len(first_line) < len(item.text):
+                result.append(DistillationItem(
+                    type="enumeration",
+                    text=first_line,
+                ))
+    return result
+
+
 async def _distill_single_document(
     doc_id: UUID,
     chunks: List[DocumentChunk],
@@ -157,6 +180,9 @@ async def _distill_single_document(
     else:
         # Hierarchical distillation for large documents
         items = await _hierarchical_distill(sorted_chunks, context_char_limit)
+
+    # Post-processing: split long enumerations into summary + full versions
+    items = _split_long_enumerations(items)
 
     # Convert to KnowledgeDistillation DataPoints
     distillation_points = []
@@ -221,21 +247,55 @@ async def _hierarchical_distill(
     if len(batches) <= 1:
         return batch_results
 
-    # Second pass: merge all batch results
+    # Second pass: merge all batch results using merge-specific prompt
     merge_text = "\n\n".join(
         f"[{item.type.upper()}] {item.text}" for item in batch_results
     )
 
     if len(merge_text) <= context_char_limit:
         # Merge all at once
-        merged_items = await _call_llm_distill(merge_text)
+        merged_items = await _call_llm_merge(merge_text)
         return merged_items
     else:
-        # If merge text is still too large, return batch results as-is
-        logger.warning(
-            "Merge text exceeds context limit, returning unmerged batch results"
+        # Split merge text into groups and merge each group, then merge groups
+        logger.info(
+            "Merge text exceeds context limit, performing grouped merge"
         )
-        return batch_results
+        # Split batch_results into groups that fit within context_char_limit
+        merge_groups = []
+        current_group = []
+        current_len = 0
+        for item in batch_results:
+            item_text = f"[{item.type.upper()}] {item.text}"
+            item_len = len(item_text)
+            if current_len + item_len > context_char_limit and current_group:
+                merge_groups.append(current_group)
+                current_group = [item]
+                current_len = item_len
+            else:
+                current_group.append(item)
+                current_len += item_len + 2
+        if current_group:
+            merge_groups.append(current_group)
+
+        # Merge each group
+        group_merged = []
+        for group in merge_groups:
+            group_text = "\n\n".join(
+                f"[{item.type.upper()}] {item.text}" for item in group
+            )
+            merged = await _call_llm_merge(group_text)
+            group_merged.extend(merged)
+
+        # If we ended up with multiple groups, try a final merge
+        if len(merge_groups) > 1:
+            final_text = "\n\n".join(
+                f"[{item.type.upper()}] {item.text}" for item in group_merged
+            )
+            if len(final_text) <= context_char_limit:
+                return await _call_llm_merge(final_text)
+
+        return group_merged
 
 
 async def _call_llm_distill(document_text: str) -> List[DistillationItem]:
@@ -299,6 +359,67 @@ async def _call_llm_distill(document_text: str) -> List[DistillationItem]:
 
     except Exception as e:
         logger.error(f"LLM distillation call failed: {e}")
+        return []
+
+
+async def _call_llm_merge(distillation_text: str) -> List[DistillationItem]:
+    """
+    Call the LLM to merge batch distillation results.
+
+    Uses merge-specific prompts that tell the LLM it's merging already-distilled
+    knowledge items, not distilling raw document text.
+
+    Returns a list of DistillationItem objects.
+    """
+    import litellm
+    from cognee.infrastructure.llm.config import get_llm_config
+
+    litellm.drop_params = True
+
+    # Load merge-specific prompts
+    system_prompt = read_query_prompt(
+        "merge_distillation_system.txt",
+        base_directory=PROMPTS_DIR,
+    )
+
+    context = {"distillation_results": distillation_text}
+    text_input = render_prompt(
+        "merge_distillation_input.txt",
+        context,
+        base_directory=PROMPTS_DIR,
+    )
+
+    llm_config = get_llm_config()
+
+    try:
+        response = await litellm.acompletion(
+            model=llm_config.llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text_input},
+            ],
+            api_key=llm_config.llm_api_key,
+            api_base=llm_config.llm_endpoint,
+            temperature=llm_config.llm_temperature,
+            timeout=300,
+            stream=True,
+        )
+
+        full_response = ""
+        async for chunk in response:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                full_response += delta.content
+
+        if not full_response:
+            logger.warning("LLM returned empty response for merge")
+            return []
+
+        logger.info(f"Merge LLM response: {len(full_response)} chars")
+        return _parse_distillation_response(full_response)
+
+    except Exception as e:
+        logger.error(f"LLM merge call failed: {e}")
         return []
 
 

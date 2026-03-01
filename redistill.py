@@ -11,7 +11,6 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="repla
 from pathlib import Path
 
 DB_ROOT = Path("cognee/.cognee_system/databases")
-USER_ID = "bac5daba-cbd5-4ce7-8ca2-5a432ba6d4af"
 
 
 async def main():
@@ -21,7 +20,13 @@ async def main():
     from cognee.tasks.distillation.distill_knowledge import distill_knowledge
     from cognee.infrastructure.config.yaml_config import load_yaml_config
     from cognee.context_global_variables import vector_db_config
+    from cognee.modules.users.methods import get_default_user
     from uuid import UUID, uuid5, NAMESPACE_OID
+
+    # Auto-detect user ID from cognee's default user
+    user = await get_default_user()
+    USER_ID = str(user.id)
+    print(f"Detected default user: {USER_ID}")
 
     # Minimal chunk wrapper
     class SimpleChunk:

@@ -9,11 +9,11 @@ RAGAS 风格的 RAG 评测脚本
 
 使用 LLM 作为裁判 (LLM-as-Judge)
 """
-import sys, io, httpx, json, time, asyncio
+import sys, io, httpx, json, time, asyncio, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("COGNEE_BASE_URL", "http://127.0.0.1:8000")
 
 # ==============================================================
 # Ground Truth: 从文档原文提取的标准答案
@@ -119,7 +119,10 @@ def get_token():
     with httpx.Client(trust_env=False, transport=httpx.HTTPTransport(proxy=None), timeout=30) as c:
         r = c.post(
             f"{BASE_URL}/api/v1/auth/login",
-            data={"username": "default_user@example.com", "password": "default_password"},
+            data={
+                "username": os.getenv("COGNEE_TEST_USERNAME", "default_user@example.com"),
+                "password": os.getenv("COGNEE_TEST_PASSWORD", "default_password"),
+            },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         return r.json().get("access_token")
@@ -157,8 +160,8 @@ def search(query: str, auth_header: dict) -> str:
         return ""
 
 
-DASHSCOPE_API_KEY = "sk-f9235546f8944cdca5529643bfa153f1"
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 def judge_with_llm(question: str, ground_truth: str, answer: str, auth_header: dict) -> dict:
     """使用 DashScope LLM API 对答案进行 RAGAS 风格评分（带重试）"""

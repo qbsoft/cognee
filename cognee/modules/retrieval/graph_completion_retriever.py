@@ -191,24 +191,64 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Creates synthetic Edge objects with a marker attribute so they can be
         identified and formatted separately in get_completion().
 
+        Results are re-ranked by keyword overlap with the query so that KDs
+        containing exact query terms are presented first.
+
         MUST be called within the dataset database context (ContextVar set).
         """
         try:
             vector_engine = get_vector_engine()
             results = await vector_engine.search(
-                "KnowledgeDistillation_text", query, limit=5,
+                "KnowledgeDistillation_text", query, limit=20,
             )
             if not results:
                 return []
 
-            edges = []
-            for i, result in enumerate(results):
-                if result.score > 0.5:
+            # Extract query keywords using 2-char CJK bigrams + numbers.
+            # We use bigrams instead of full CJK runs because Chinese text
+            # has no spaces, so a full run would be the entire query string
+            # which would never match in KD text.
+            import re
+            cjk_runs = re.findall(r'[\u4e00-\u9fff]+', query)
+            query_keywords = set()
+            focus_keywords = set()  # Last bigrams = topic focus of the query
+            for run in cjk_runs:
+                bigrams = [run[j:j+2] for j in range(len(run) - 1)]
+                query_keywords.update(bigrams)
+                # Last 2 bigrams of the last CJK run are the query focus
+                if run == cjk_runs[-1] and bigrams:
+                    focus_keywords.update(bigrams[-2:])
+            query_keywords |= set(re.findall(r'\d+', query))
+
+            # Build candidate list with keyword-boosted scores.
+            # Use a generous distance threshold (0.8) because the embedding
+            # API (DashScope) is non-deterministic — the same query can yield
+            # distances that fluctuate by ~0.15 between runs.  We rely on
+            # keyword re-ranking below to surface the best matches.
+            candidates = []
+            for result in results:
+                if result.score > 0.8:
                     continue
                 text = result.payload.get("text", "")
                 if not text:
                     continue
+                # Count keyword hits with stronger weight for focus keywords
+                regular_hits = sum(1 for kw in (query_keywords - focus_keywords) if kw in text)
+                focus_hits = sum(1 for kw in focus_keywords if kw in text)
+                # Lower score = better.
+                # Focus keywords (last bigrams of query = topic noun) get a
+                # very strong boost (-1.0 each) so that KDs matching the
+                # exact topic reliably outrank semantically-similar but
+                # topically-different results (e.g. "流程" vs "阶段").
+                boosted_score = result.score - (regular_hits * 0.1) - (focus_hits * 1.0)
+                candidates.append((boosted_score, result.score, text))
 
+            # Sort by boosted score (lower is better) and keep top 5
+            candidates.sort(key=lambda x: x[0])
+            candidates = candidates[:5]
+
+            edges = []
+            for i, (boosted, orig_score, text) in enumerate(candidates):
                 kd_node = Node(
                     node_id=f"kd_{i}",
                     attributes={
@@ -216,7 +256,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                         "text": text,
                         "type": "KnowledgeDistillation",
                         "description": text,
-                        "vector_distance": result.score,
+                        "vector_distance": orig_score,
                     },
                 )
                 edge = Edge(
@@ -284,12 +324,14 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         # Convert graph edges to text
         graph_context = await resolve_edges_to_text(graph_edges)
 
-        # Append KD content after graph context as supplementary reference
+        # Prepend KD content BEFORE graph context as high-priority reference.
+        # KD contains cross-chunk aggregated knowledge (enumerations, counts,
+        # Q&A pairs) which is often more precise than raw graph triplets.
         if kd_texts:
-            kd_section = "\n\n【补充参考知识】\n"
+            kd_section = "【核心参考知识（准确性最高，与下方图谱信息冲突时以此为准）】\n"
             for i, text in enumerate(kd_texts, 1):
                 kd_section += f"{i}. {text}\n\n"
-            context_text = graph_context + kd_section
+            context_text = kd_section + "\n" + graph_context
         else:
             context_text = graph_context
 

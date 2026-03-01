@@ -2,7 +2,7 @@
 """
 直接调用 cognee Python SDK 的 RAGAS 评测脚本（无需 HTTP 服务器）
 """
-import sys, io, json, time, asyncio
+import sys, io, json, time, asyncio, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
@@ -112,8 +112,8 @@ JUDGE_USER_PROMPT = """请对以下 RAG 系统的回答进行评测：
 {{"faithfulness": 0.0, "answer_relevancy": 0.0, "factual_correctness": 0.0, "reason": "简短说明"}}"""
 
 
-DASHSCOPE_API_KEY = "sk-f9235546f8944cdca5529643bfa153f1"
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 
 def judge_with_llm(question: str, ground_truth: str, answer: str) -> dict:

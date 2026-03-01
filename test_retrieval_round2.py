@@ -11,12 +11,13 @@ import io
 import httpx
 import json
 import time
+import os
 
 # 强制 stdout 使用 UTF-8，避免 Windows GBK 乱码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("COGNEE_BASE_URL", "http://127.0.0.1:8000")
 
 # 25 个测试查询 + 期望关键词
 TEST_CASES = [
@@ -107,7 +108,10 @@ def get_auth_token():
     ) as client:
         resp = client.post(
             f"{BASE_URL}/api/v1/auth/login",
-            data={"username": "default_user@example.com", "password": "default_password"},
+            data={
+                "username": os.getenv("COGNEE_TEST_USERNAME", "default_user@example.com"),
+                "password": os.getenv("COGNEE_TEST_PASSWORD", "default_password"),
+            },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if resp.status_code == 200:
