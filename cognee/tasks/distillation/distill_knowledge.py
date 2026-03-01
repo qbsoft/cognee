@@ -242,12 +242,17 @@ async def _call_llm_distill(document_text: str) -> List[DistillationItem]:
     """
     Call the LLM to generate knowledge distillations from document text.
 
-    Uses response_model=str to avoid instructor's heavy JSON schema injection
-    which can cause Connection errors with some API providers (e.g. DashScope).
-    The JSON is parsed manually from the string response.
+    Uses litellm streaming mode to avoid DashScope server disconnecting
+    on long-running requests (large documents can take 2+ minutes to distill,
+    exceeding non-streaming connection timeouts).
 
     Returns a list of DistillationItem objects.
     """
+    import litellm
+    from cognee.infrastructure.llm.config import get_llm_config
+
+    litellm.drop_params = True
+
     # Load prompts
     system_prompt = read_query_prompt(
         "distill_knowledge_system.txt",
@@ -261,20 +266,36 @@ async def _call_llm_distill(document_text: str) -> List[DistillationItem]:
         base_directory=PROMPTS_DIR,
     )
 
+    llm_config = get_llm_config()
+
     try:
-        # Use response_model=str to avoid instructor overhead (large JSON schema
-        # injection causes Connection errors with DashScope/Qwen APIs)
-        response = await LLMGateway.acreate_structured_output(
-            text_input=text_input,
-            system_prompt=system_prompt,
-            response_model=str,
+        # Use streaming to keep connection alive during long distillation
+        response = await litellm.acompletion(
+            model=llm_config.llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text_input},
+            ],
+            api_key=llm_config.llm_api_key,
+            api_base=llm_config.llm_endpoint,
+            temperature=llm_config.llm_temperature,
+            timeout=300,
+            stream=True,
         )
 
-        if not response or not isinstance(response, str):
-            logger.warning("LLM returned empty or non-string response")
+        # Collect streamed response
+        full_response = ""
+        async for chunk in response:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                full_response += delta.content
+
+        if not full_response:
+            logger.warning("LLM returned empty response for distillation")
             return []
 
-        return _parse_distillation_response(response)
+        logger.info(f"Distillation LLM response: {len(full_response)} chars")
+        return _parse_distillation_response(full_response)
 
     except Exception as e:
         logger.error(f"LLM distillation call failed: {e}")

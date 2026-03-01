@@ -9,7 +9,7 @@ distillation:
   # Maximum characters per LLM distillation call
   # Documents exceeding this limit are processed hierarchically (map-reduce)
   # ~4 chars/token, so 24000 chars ≈ 6000 tokens
-  context_char_limit: 24000
+  context_char_limit: 50000
 
   # Types of knowledge distillation to generate
   # Remove items from this list to skip specific types

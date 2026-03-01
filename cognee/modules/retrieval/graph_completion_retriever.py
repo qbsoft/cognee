@@ -3,7 +3,7 @@ from typing import Any, Optional, Type, List
 from uuid import NAMESPACE_OID, uuid5
 
 from cognee.infrastructure.engine import DataPoint
-from cognee.modules.graph.cognee_graph.CogneeGraphElements import Edge
+from cognee.modules.graph.cognee_graph.CogneeGraphElements import Edge, Node
 from cognee.tasks.storage import add_data_points
 from cognee.modules.graph.utils import resolve_edges_to_text
 from cognee.modules.graph.utils.convert_node_to_data_point import get_all_subclasses
@@ -19,10 +19,15 @@ from cognee.modules.retrieval.utils.extract_uuid_from_node import extract_uuid_f
 from cognee.modules.retrieval.utils.models import CogneeUserInteraction
 from cognee.modules.engine.models.node_set import NodeSet
 from cognee.infrastructure.databases.graph import get_graph_engine
+from cognee.infrastructure.databases.vector import get_vector_engine
+from cognee.infrastructure.databases.vector.exceptions import CollectionNotFoundError
 from cognee.context_global_variables import session_user
 from cognee.infrastructure.databases.cache.config import CacheConfig
 
 logger = get_logger("GraphCompletionRetriever")
+
+# Marker used to identify KD synthetic edges in the context list
+_KD_EDGE_MARKER = "__kd_ref__"
 
 
 class GraphCompletionRetriever(BaseGraphRetriever):
@@ -116,6 +121,14 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         """
         Retrieves and resolves graph triplets into context based on a query.
 
+        Also supplements results with KnowledgeDistillation direct vector search.
+        KD search MUST happen here (not in get_completion) because get_context runs
+        within the dataset database context (ContextVar is set), while get_completion
+        may run outside it (after asyncio.gather in use_combined_context mode).
+
+        KD results are wrapped as synthetic Edge objects with a special marker
+        so get_completion() can extract and format them separately.
+
         Parameters:
         -----------
 
@@ -124,8 +137,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Returns:
         --------
 
-            - str: A string representing the resolved context from the retrieved triplets, or an
-              empty string if no triplets are found.
+            - List[Edge]: Retrieved triplets plus synthetic edges for KnowledgeDistillation.
         """
         graph_engine = await get_graph_engine()
         is_empty = await graph_engine.is_empty()
@@ -137,8 +149,6 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         triplets = await self.get_triplets(query)
 
         if len(triplets) == 0:
-            # 图谱搜索无结果时，回退到纯 DocumentChunk 向量搜索
-            # 这对聚合/计数类查询（如"共实施多少个流程"）特别有效
             logger.warning(
                 "Graph triplet search returned 0 results, trying DocumentChunk fallback for query: %s",
                 query,
@@ -156,13 +166,82 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 logger.warning("DocumentChunk fallback failed: %s", fallback_err)
                 triplets = []
 
+        # Supplement with KnowledgeDistillation direct vector search.
+        # KD nodes have no graph edges, so brute_force_triplet_search discards them.
+        # We search the vector index directly and create synthetic Edge objects
+        # with a special marker so get_completion() can format them prominently.
+        kd_edges = await self._search_knowledge_distillation(query)
+        if kd_edges:
+            triplets = list(triplets) + kd_edges
+            logger.info(
+                "Added %d KnowledgeDistillation edges to context for query: %s",
+                len(kd_edges), query[:50],
+            )
+
         if len(triplets) == 0:
             logger.warning("Empty context was provided to the completion")
             return []
 
-        # context = await self.resolve_edges_to_text(triplets)
-
         return triplets
+
+    async def _search_knowledge_distillation(self, query: str) -> List[Edge]:
+        """
+        Direct vector search on KnowledgeDistillation_text collection.
+
+        Creates synthetic Edge objects with a marker attribute so they can be
+        identified and formatted separately in get_completion().
+
+        MUST be called within the dataset database context (ContextVar set).
+        """
+        try:
+            vector_engine = get_vector_engine()
+            results = await vector_engine.search(
+                "KnowledgeDistillation_text", query, limit=5,
+            )
+            if not results:
+                return []
+
+            edges = []
+            for i, result in enumerate(results):
+                if result.score > 0.5:
+                    continue
+                text = result.payload.get("text", "")
+                if not text:
+                    continue
+
+                kd_node = Node(
+                    node_id=f"kd_{i}",
+                    attributes={
+                        "name": _KD_EDGE_MARKER,
+                        "text": text,
+                        "type": "KnowledgeDistillation",
+                        "description": text,
+                        "vector_distance": result.score,
+                    },
+                )
+                edge = Edge(
+                    node1=kd_node,
+                    node2=kd_node,
+                    attributes={
+                        "relationship_name": "distilled_knowledge",
+                        "relationship_type": "distilled_knowledge",
+                    },
+                    directed=False,
+                )
+                edges.append(edge)
+
+            if edges:
+                logger.info(
+                    "KnowledgeDistillation search: %d results for query '%s'",
+                    len(edges), query[:50],
+                )
+            return edges
+        except CollectionNotFoundError:
+            logger.debug("KnowledgeDistillation_text collection not found, skipping")
+            return []
+        except Exception as e:
+            logger.warning("KnowledgeDistillation search failed: %s", e)
+            return []
 
     async def get_completion(
         self,
@@ -192,7 +271,27 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         if triplets is None:
             triplets = await self.get_context(query)
 
-        context_text = await resolve_edges_to_text(triplets)
+        # Separate KD edges from graph edges for distinct formatting
+        graph_edges = []
+        kd_texts = []
+        for edge in triplets:
+            if (hasattr(edge, 'node1') and
+                    edge.node1.attributes.get("name") == _KD_EDGE_MARKER):
+                kd_texts.append(edge.node1.attributes.get("text", ""))
+            else:
+                graph_edges.append(edge)
+
+        # Convert graph edges to text
+        graph_context = await resolve_edges_to_text(graph_edges)
+
+        # Append KD content after graph context as supplementary reference
+        if kd_texts:
+            kd_section = "\n\n【补充参考知识】\n"
+            for i, text in enumerate(kd_texts, 1):
+                kd_section += f"{i}. {text}\n\n"
+            context_text = graph_context + kd_section
+        else:
+            context_text = graph_context
 
         cache_config = CacheConfig()
         user = session_user.get()
