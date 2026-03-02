@@ -98,6 +98,10 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         vector_index_collections: List[str] = []
 
         for subclass in subclasses:
+            # Skip KnowledgeDistillation - it's searched separately in
+            # _search_knowledge_distillation() and has no graph edges anyway
+            if subclass.__name__ == "KnowledgeDistillation":
+                continue
             if "metadata" in subclass.model_fields:
                 metadata_field = subclass.model_fields["metadata"]
                 if hasattr(metadata_field, "default") and metadata_field.default is not None:
@@ -105,6 +109,11 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                         index_fields = metadata_field.default.get("index_fields", [])
                         for field_name in index_fields:
                             vector_index_collections.append(f"{subclass.__name__}_{field_name}")
+
+        logger.info(
+            "get_triplets: searching %d collections: %s",
+            len(vector_index_collections), vector_index_collections,
+        )
 
         found_triplets = await brute_force_triplet_search(
             query,
@@ -144,15 +153,21 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
         if is_empty:
             logger.warning("Search attempt on an empty knowledge graph")
-            return []
+            # Still try KD search even if graph is empty
+            kd_edges = await self._search_knowledge_distillation(query)
+            return kd_edges if kd_edges else []
 
         triplets = await self.get_triplets(query)
 
         if len(triplets) == 0:
             logger.warning(
-                "Graph triplet search returned 0 results, trying DocumentChunk fallback for query: %s",
-                query,
+                "Graph triplet search returned 0 results for query: '%s'. "
+                "Possible causes: (1) Entity/EntityType vector collections don't exist "
+                "(re-run cognify to rebuild), (2) similarity_threshold=%.2f is too strict, "
+                "(3) graph nodes exist but have no matching vector indexes.",
+                query, self.similarity_threshold,
             )
+            # Fallback 1: Try DocumentChunk with relaxed threshold
             try:
                 triplets = await brute_force_triplet_search(
                     query,
@@ -162,6 +177,8 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                     min_quality_score=0.0,
                     ensure_diversity=False,
                 )
+                if triplets:
+                    logger.info("DocumentChunk fallback found %d results", len(triplets))
             except Exception as fallback_err:
                 logger.warning("DocumentChunk fallback failed: %s", fallback_err)
                 triplets = []
@@ -249,10 +266,14 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
             edges = []
             for i, (boosted, orig_score, text) in enumerate(candidates):
+                # Generate a meaningful display name from the KD text
+                first_line = text.split('\n')[0].strip() if text else ""
+                display_name = first_line[:40] + "..." if len(first_line) > 40 else first_line
                 kd_node = Node(
                     node_id=f"kd_{i}",
                     attributes={
-                        "name": _KD_EDGE_MARKER,
+                        "name": display_name or "蒸馏知识",
+                        "_kd_marker": _KD_EDGE_MARKER,
                         "text": text,
                         "type": "KnowledgeDistillation",
                         "description": text,
@@ -316,7 +337,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         kd_texts = []
         for edge in triplets:
             if (hasattr(edge, 'node1') and
-                    edge.node1.attributes.get("name") == _KD_EDGE_MARKER):
+                    edge.node1.attributes.get("_kd_marker") == _KD_EDGE_MARKER):
                 kd_texts.append(edge.node1.attributes.get("text", ""))
             else:
                 graph_edges.append(edge)

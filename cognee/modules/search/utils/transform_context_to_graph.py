@@ -88,23 +88,28 @@ def transform_context_to_graph(context: List[Edge]):
     nodes = {}
     edges = {}
 
+    # Internal attribute keys that should not be exposed to the frontend
+    _internal_keys = {"_kd_marker"}
+
     for triplet in context:
         # 处理节点1
-        node1_label = _get_node_label(triplet.node1.attributes, triplet.node1.id)
+        node1_attrs = {k: v for k, v in triplet.node1.attributes.items() if k not in _internal_keys}
+        node1_label = _get_node_label(node1_attrs, triplet.node1.id)
         nodes[triplet.node1.id] = {
             "id": triplet.node1.id,
             "label": node1_label,
-            "type": triplet.node1.attributes.get("type", "unknown"),
-            "attributes": triplet.node1.attributes,
+            "type": node1_attrs.get("type", "unknown"),
+            "attributes": node1_attrs,
         }
-        
+
         # 处理节点2
-        node2_label = _get_node_label(triplet.node2.attributes, triplet.node2.id)
+        node2_attrs = {k: v for k, v in triplet.node2.attributes.items() if k not in _internal_keys}
+        node2_label = _get_node_label(node2_attrs, triplet.node2.id)
         nodes[triplet.node2.id] = {
             "id": triplet.node2.id,
             "label": node2_label,
-            "type": triplet.node2.attributes.get("type", "unknown"),
-            "attributes": triplet.node2.attributes,
+            "type": node2_attrs.get("type", "unknown"),
+            "attributes": node2_attrs,
         }
         
         # 翻译关系名称
