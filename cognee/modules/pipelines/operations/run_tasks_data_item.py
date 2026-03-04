@@ -121,8 +121,10 @@ async def run_tasks_data_item_incremental(
             await session.merge(data_point)
             await session.commit()
         
-        # Mark all pipeline stages as completed
-        await mark_all_stages_completed(data_id, dataset.id)
+        # Mark pipeline stages as completed.
+        # Pass pipeline_name so add_pipeline only marks parsing+chunking,
+        # while cognify_pipeline marks all four stages.
+        await mark_all_stages_completed(data_id, dataset.id, pipeline_name=pipeline_name)
 
         yield {
             "run_info": PipelineRunCompleted(
@@ -160,6 +162,7 @@ async def run_tasks_data_item_regular(
     pipeline_run_id: str,
     context: Optional[Dict[str, Any]],
     user: User,
+    pipeline_name: str = "cognify_pipeline",
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Process a single data item in regular (non-incremental) mode.
@@ -175,6 +178,7 @@ async def run_tasks_data_item_regular(
         pipeline_run_id: Unique identifier for this pipeline run
         context: Optional context dictionary
         user: User performing the operation
+        pipeline_name: Name of the pipeline (used to decide which stages to mark)
 
     Yields:
         Dict containing run_info for each processing step
@@ -201,9 +205,10 @@ async def run_tasks_data_item_regular(
             payload=result,
         )
     
-    # Mark all pipeline stages as completed
+    # Mark pipeline stages as completed.
+    # Pass pipeline_name so add_pipeline only marks parsing+chunking.
     if data_id:
-        await mark_all_stages_completed(data_id, dataset.id)
+        await mark_all_stages_completed(data_id, dataset.id, pipeline_name=pipeline_name)
 
     yield {
         "run_info": PipelineRunCompleted(
@@ -269,6 +274,7 @@ async def run_tasks_data_item(
             pipeline_run_id=pipeline_run_id,
             context=context,
             user=user,
+            pipeline_name=pipeline_name,
         ):
             pass
 

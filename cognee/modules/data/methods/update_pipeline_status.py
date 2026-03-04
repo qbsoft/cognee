@@ -354,22 +354,32 @@ async def update_data_pipeline_status(
         )
 
 
-async def mark_all_stages_completed(data_id: UUID, dataset_id: UUID):
-    """Mark all pipeline stages as completed for a data item.
+async def mark_all_stages_completed(
+    data_id: UUID,
+    dataset_id: UUID,
+    pipeline_name: str = "cognify_pipeline",
+):
+    """Mark pipeline stages as completed for a data item.
 
-    This is called after successful pipeline execution to mark parsing, chunking,
-    graph_indexing, and vector_indexing as completed for a specific dataset.
-    
-    The function can be called immediately after pipeline tasks return, because:
-    1. index_data_points() and index_graph_edges() already await all their async tasks
-    2. All database writes are completed before those functions return
-    3. No additional delay is needed - the data is guaranteed to be written
+    When called from add_pipeline, only marks parsing and chunking as completed
+    (graph_indexing and vector_indexing are not yet done — they are created by
+    cognify_pipeline which runs later).
+
+    When called from cognify_pipeline (or reprocess), marks all four stages.
 
     Args:
         data_id: UUID of the data item
         dataset_id: Dataset ID for which to mark stages as completed
+        pipeline_name: The pipeline that is calling this function.
+            "add_pipeline" → only parsing + chunking.
+            Any other value (default "cognify_pipeline") → all stages.
     """
-    stages = ["parsing", "chunking", "graph_indexing", "vector_indexing"]
+    if pipeline_name == "add_pipeline":
+        # add_pipeline only handles parsing and chunking.
+        # graph_indexing and vector_indexing are done by cognify_pipeline.
+        stages = ["parsing", "chunking"]
+    else:
+        stages = ["parsing", "chunking", "graph_indexing", "vector_indexing"]
 
     for stage in stages:
         await update_data_pipeline_status(

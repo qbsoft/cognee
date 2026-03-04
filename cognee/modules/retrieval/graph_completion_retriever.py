@@ -360,6 +360,12 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             seen_pairs = set()
             max_viz_edges = 30  # Limit to avoid frontend overload
 
+            # Internal node types to exclude from visualization
+            _INTERNAL_NODE_TYPES = {
+                "NodeSet", "nodeset",
+                "Timestamp", "timestamp",
+            }
+
             for source_id, target_id, rel_type, rel_props, source_props, target_props in neighbor_results:
                 # Skip edges that already exist in triplets
                 if (source_id, target_id) in existing_edge_keys:
@@ -367,6 +373,16 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 # Skip duplicate pairs in results
                 pair_key = (source_id, target_id) if source_id < target_id else (target_id, source_id)
                 if pair_key in seen_pairs:
+                    continue
+                # Skip edges involving internal node types
+                src_type = source_props.get("type", "")
+                tgt_type = target_props.get("type", "")
+                # Check labels from Neo4j as well (labels may be in props)
+                src_labels = source_props.get("_labels", [])
+                tgt_labels = target_props.get("_labels", [])
+                if (src_type in _INTERNAL_NODE_TYPES or tgt_type in _INTERNAL_NODE_TYPES
+                        or any(lbl in _INTERNAL_NODE_TYPES for lbl in src_labels)
+                        or any(lbl in _INTERNAL_NODE_TYPES for lbl in tgt_labels)):
                     continue
                 seen_pairs.add(pair_key)
 

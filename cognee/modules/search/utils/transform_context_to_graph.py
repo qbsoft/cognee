@@ -92,6 +92,10 @@ def transform_context_to_graph(context: List[Edge]):
     _internal_keys = {"_kd_marker", "_viz_only"}
 
     for triplet in context:
+        # Skip KD self-loop edges (node1.id == node2.id) — they create isolated nodes
+        if triplet.node1.id == triplet.node2.id:
+            continue
+
         # 处理节点1
         node1_attrs = {k: v for k, v in triplet.node1.attributes.items() if k not in _internal_keys}
         node1_label = _get_node_label(node1_attrs, triplet.node1.id)
