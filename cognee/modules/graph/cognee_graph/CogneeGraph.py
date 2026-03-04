@@ -201,7 +201,7 @@ class CogneeGraph(CogneeAbstractGraph):
     ) -> List[Edge]:
         """
         计算并返回最重要的 top-k 个三元组。
-        
+
         Args:
             k: 返回的三元组数量
             similarity_threshold: 相似度阈值（归一化后的距离），用于过滤相关边。
@@ -209,18 +209,32 @@ class CogneeGraph(CogneeAbstractGraph):
                 默认值为 0.5，表示更严格地过滤相关性较低的节点。
                 过滤逻辑：
                 - 如果两个节点都低于阈值，保留该边
-                - 如果至少一个节点非常相关（< 0.3），且另一个节点中等相关（< 0.7），保留该边
+                - 如果至少一个节点非常相关（< 0.3），且另一个节点中等相关（< 阈值），保留该边
+                - 如果至少一个节点非常相关（< 0.3），即使另一个节点无距离也保留（邻居发现）
                 - 否则过滤掉
             query: 查询文本（可选），如果提供，将使用质量评分进行排序
             dynamic_threshold: 是否使用动态阈值调整（默认True）
-        
+
         Returns:
             最重要的 top-k 个三元组列表
         """
+        # Penalty value for nodes without vector_distance (not in top-N search results).
+        # Using a finite penalty (instead of inf) allows neighbor-discovery edges to
+        # participate in scoring/ranking while still being ranked below edges where
+        # BOTH nodes match the query.
+        _UNKNOWN_DIST_PENALTY = 1.0
+
         def score(edge):
             n1 = edge.node1.attributes.get("vector_distance", float("inf"))
             n2 = edge.node2.attributes.get("vector_distance", float("inf"))
             e = edge.attributes.get("vector_distance", float("inf"))
+            # Replace inf with finite penalty so neighbor edges can compete
+            if n1 == float("inf") or n1 is None:
+                n1 = _UNKNOWN_DIST_PENALTY
+            if n2 == float("inf") or n2 is None:
+                n2 = _UNKNOWN_DIST_PENALTY
+            if e == float("inf") or e is None:
+                e = _UNKNOWN_DIST_PENALTY
             return n1 + n2 + e
         
         # 动态阈值调整：根据结果数量调整阈值
@@ -250,51 +264,64 @@ class CogneeGraph(CogneeAbstractGraph):
             改进的过滤逻辑：
             1. 过滤掉系统节点（NodeSet 类型）
             2. 两个节点都低于阈值（严格相关）
-            3. 或者至少一个节点非常相关（< 0.3），且另一个节点也相关（< 阈值）
+            3. 至少一个节点非常相关（< 0.3），且另一个节点也有距离且 < 阈值
+            4. 至少一个节点非常相关（< 0.3），即使另一个节点无距离也保留（邻居发现）
+               — 这是知识图谱的核心价值：通过已知实体发现关联实体
             """
             # 过滤掉系统节点（NodeSet 类型）
             n1_type = edge.node1.attributes.get("type", "")
             n2_type = edge.node2.attributes.get("type", "")
             if n1_type == "NodeSet" or n2_type == "NodeSet":
                 return False
-            
+
             n1_dist = edge.node1.attributes.get("vector_distance", float("inf"))
             n2_dist = edge.node2.attributes.get("vector_distance", float("inf"))
-            
+
             # 处理 None 值，将其视为 inf
             if n1_dist is None:
                 n1_dist = float("inf")
             if n2_dist is None:
                 n2_dist = float("inf")
-            
+
             # 如果两个节点都没有有效的 vector_distance，过滤掉
             if n1_dist == float("inf") and n2_dist == float("inf"):
                 return False
-            
+
             # 使用调整后的阈值
             threshold = adjusted_threshold
-            
+
             # 情况1：两个节点都低于阈值（严格相关）
             both_relevant = (
                 n1_dist != float("inf") and n1_dist < threshold and
                 n2_dist != float("inf") and n2_dist < threshold
             )
-            
-            # 情况2：至少一个节点非常相关（< 0.3），且另一个节点也相关（< 阈值）
-            # 这样更严格，避免包含过多低相关节点
+
+            # 情况2：至少一个节点非常相关（< 0.3），且另一个节点也有距离且 < 阈值
             one_highly_relevant = (
-                (n1_dist != float("inf") and n1_dist < 0.3 and 
+                (n1_dist != float("inf") and n1_dist < 0.3 and
                  n2_dist != float("inf") and n2_dist < threshold) or
-                (n2_dist != float("inf") and n2_dist < 0.3 and 
+                (n2_dist != float("inf") and n2_dist < 0.3 and
                  n1_dist != float("inf") and n1_dist < threshold)
             )
-            
-            return both_relevant or one_highly_relevant
+
+            # 情况3（邻居发现）：至少一个节点非常相关（< 0.3），允许另一端无距离
+            # 这确保了搜索到的实体的关联关系能够被展示出来
+            # 这些边在 score() 中会获得 _UNKNOWN_DIST_PENALTY 惩罚，
+            # 因此排序时会自然低于双端都匹配的边
+            neighbor_discovery = (
+                (n1_dist != float("inf") and n1_dist < 0.3) or
+                (n2_dist != float("inf") and n2_dist < 0.3)
+            )
+
+            return both_relevant or one_highly_relevant or neighbor_discovery
         
         # 先过滤掉不相关的边（至少一个节点必须有有效的 vector_distance 且低于阈值）
 
         # ===== 诊断: 分析所有边的距离分布 =====
-        diag_edge_stats = {"no_dist": 0, "nodeset": 0, "both_below": 0, "one_high": 0, "above_threshold": 0}
+        diag_edge_stats = {
+            "no_dist": 0, "nodeset": 0, "both_below": 0,
+            "one_high": 0, "neighbor": 0, "above_threshold": 0,
+        }
         diag_dist_values = []
         for edge in self.edges:
             n1_type = edge.node1.attributes.get("type", "")
@@ -319,6 +346,9 @@ class CogneeGraph(CogneeAbstractGraph):
             elif ((n1_dist != float("inf") and n1_dist < 0.3 and n2_dist != float("inf") and n2_dist < adjusted_threshold) or
                   (n2_dist != float("inf") and n2_dist < 0.3 and n1_dist != float("inf") and n1_dist < adjusted_threshold)):
                 diag_edge_stats["one_high"] += 1
+            elif ((n1_dist != float("inf") and n1_dist < 0.3) or
+                  (n2_dist != float("inf") and n2_dist < 0.3)):
+                diag_edge_stats["neighbor"] += 1
             else:
                 diag_edge_stats["above_threshold"] += 1
 
@@ -328,7 +358,8 @@ class CogneeGraph(CogneeAbstractGraph):
         print(f"[DIAG-GRAPH] NodeSet边 (跳过): {diag_edge_stats['nodeset']}")
         print(f"[DIAG-GRAPH] 无距离边 (两端都无距离): {diag_edge_stats['no_dist']}")
         print(f"[DIAG-GRAPH] 两端都低于阈值 (保留): {diag_edge_stats['both_below']}")
-        print(f"[DIAG-GRAPH] 一端高相关 (保留): {diag_edge_stats['one_high']}")
+        print(f"[DIAG-GRAPH] 一端高相关+另一端有距离 (保留): {diag_edge_stats['one_high']}")
+        print(f"[DIAG-GRAPH] 邻居发现 (一端<0.3,另一端无距离): {diag_edge_stats['neighbor']}")
         print(f"[DIAG-GRAPH] 超过阈值 (丢弃): {diag_edge_stats['above_threshold']}")
         if diag_dist_values:
             diag_dist_values.sort()
