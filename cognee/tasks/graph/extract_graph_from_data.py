@@ -142,11 +142,25 @@ async def extract_graph_from_data(
     if not isinstance(graph_model, type) or not issubclass(graph_model, BaseModel):
         raise InvalidGraphModelError(graph_model)
 
+    # Use a semaphore to control LLM concurrency, preventing API rate-limit
+    # errors when processing many chunks.  Default: 8 concurrent calls.
+    from cognee.infrastructure.config.yaml_config import get_module_config
+    concurrency_cfg = get_module_config("concurrency").get("concurrency", {})
+    max_llm = concurrency_cfg.get("max_concurrent_llm_calls", 8)
+    sem = asyncio.Semaphore(max_llm)
+
+    async def _limited_extract(chunk):
+        async with sem:
+            return await extract_content_graph(
+                chunk.text, graph_model, custom_prompt=custom_prompt
+            )
+
+    logger.info(
+        "Extracting graph from %d chunks (max_concurrent_llm=%d)",
+        len(data_chunks), max_llm,
+    )
     chunk_graphs = await asyncio.gather(
-        *[
-            extract_content_graph(chunk.text, graph_model, custom_prompt=custom_prompt)
-            for chunk in data_chunks
-        ]
+        *[_limited_extract(chunk) for chunk in data_chunks]
     )
 
     # Note: Filter edges with missing source or target nodes

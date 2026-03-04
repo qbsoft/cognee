@@ -83,6 +83,8 @@ _HIDDEN_NODE_TYPES = {
     "NodeSet", "nodeset",
     "KnowledgeDistillation", "knowledgedistillation",
     "Timestamp", "timestamp",
+    "DocumentChunk", "documentchunk",
+    "TextSummary", "textsummary",
 }
 
 

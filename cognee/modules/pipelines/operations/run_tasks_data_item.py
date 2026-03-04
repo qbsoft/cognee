@@ -24,7 +24,10 @@ from cognee.modules.pipelines.models.PipelineRunInfo import (
 )
 from cognee.modules.pipelines.models.DataItemStatus import DataItemStatus
 from cognee.modules.pipelines.operations.run_tasks_with_telemetry import run_tasks_with_telemetry
-from cognee.modules.data.methods.update_pipeline_status import mark_all_stages_completed
+from cognee.modules.data.methods.update_pipeline_status import (
+    mark_all_stages_completed,
+    update_data_pipeline_status,
+)
 from ..tasks.task import Task
 
 logger = get_logger("run_tasks_data_item")
@@ -96,6 +99,21 @@ async def run_tasks_data_item_incremental(
                 return
 
     try:
+        # Mark graph/vector indexing as "in_progress" immediately so the frontend
+        # shows a processing indicator instead of staying at "pending" for minutes.
+        if pipeline_name == "cognify_pipeline" and data_id:
+            try:
+                await update_data_pipeline_status(
+                    data_id, "graph_indexing", "in_progress", 10, dataset.id,
+                    skip_verification=True,
+                )
+                await update_data_pipeline_status(
+                    data_id, "vector_indexing", "in_progress", 10, dataset.id,
+                    skip_verification=True,
+                )
+            except Exception:
+                pass  # Best-effort; don't fail the pipeline for status updates
+
         # Process data based on data_item and list of tasks
         async for result in run_tasks_with_telemetry(
             tasks=tasks,
@@ -189,7 +207,21 @@ async def run_tasks_data_item_regular(
     else:
         # For new data items, we need to get the id after ingestion
         data_id = None
-    
+
+    # Mark graph/vector indexing as "in_progress" immediately (same as incremental path)
+    if pipeline_name == "cognify_pipeline" and data_id:
+        try:
+            await update_data_pipeline_status(
+                data_id, "graph_indexing", "in_progress", 10, dataset.id,
+                skip_verification=True,
+            )
+            await update_data_pipeline_status(
+                data_id, "vector_indexing", "in_progress", 10, dataset.id,
+                skip_verification=True,
+            )
+        except Exception:
+            pass  # Best-effort
+
     # Process data based on data_item and list of tasks
     async for result in run_tasks_with_telemetry(
         tasks=tasks,

@@ -49,8 +49,19 @@ async def summarize_text(
         cognee_config = get_cognify_config()
         summarization_model = cognee_config.summarization_model
 
+    # Use a semaphore to control LLM concurrency, preventing API rate-limit
+    # errors when processing many chunks.  Default: 8 concurrent calls.
+    from cognee.infrastructure.config.yaml_config import get_module_config
+    concurrency_cfg = get_module_config("concurrency").get("concurrency", {})
+    max_llm = concurrency_cfg.get("max_concurrent_llm_calls", 8)
+    sem = asyncio.Semaphore(max_llm)
+
+    async def _limited_summarize(chunk_text):
+        async with sem:
+            return await extract_summary(chunk_text, summarization_model)
+
     chunk_summaries = await asyncio.gather(
-        *[extract_summary(chunk.text, summarization_model) for chunk in data_chunks]
+        *[_limited_summarize(chunk.text) for chunk in data_chunks]
     )
 
     summaries = [

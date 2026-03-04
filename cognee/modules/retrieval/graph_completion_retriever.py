@@ -38,6 +38,8 @@ _VIZ_ONLY_MARKER = "__viz_only__"
 _INTERNAL_NODE_TYPES = {
     "NodeSet", "nodeset",
     "Timestamp", "timestamp",
+    "DocumentChunk", "documentchunk",
+    "TextSummary", "textsummary",
 }
 
 

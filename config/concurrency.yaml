@@ -1,0 +1,14 @@
+# Cognify 管道并发控制配置
+# 调整这些参数可以在处理速度和 API 限流之间取得平衡
+
+concurrency:
+  # LLM 并发: extract_graph_from_data 和 summarize_text 同时最多几个 LLM 请求
+  # 推荐值: DashScope/Qwen API → 8, OpenAI → 15, 本地模型 → 根据GPU调整
+  max_concurrent_llm_calls: 8
+
+  # 文档批次大小: cognify 时每批并行处理几个文档
+  # 较大值→更快但占用更多内存, 较小值→更慢但更稳定
+  data_per_batch: 20
+
+  # 知识蒸馏并发: distill_knowledge 同时最多几个 LLM 调用
+  distillation_concurrency: 3

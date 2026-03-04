@@ -87,10 +87,17 @@ def _get_node_label(node_attributes: dict, node_id: str) -> str:
 
 # Internal/structural node types that should be hidden from graph visualization.
 # These are infrastructure nodes that clutter the graph without user value.
+# - NodeSet: container nodes for grouping data points
+# - KnowledgeDistillation: auto-generated knowledge summaries
+# - Timestamp: temporal metadata nodes
+# - DocumentChunk: raw text segments (end users see "文档片段" which is confusing)
+# - TextSummary: auto-generated chunk summaries
 _HIDDEN_NODE_TYPES = {
     "NodeSet", "nodeset",
     "KnowledgeDistillation", "knowledgedistillation",
     "Timestamp", "timestamp",
+    "DocumentChunk", "documentchunk",
+    "TextSummary", "textsummary",
 }
 
 
