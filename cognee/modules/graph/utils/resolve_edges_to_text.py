@@ -124,6 +124,11 @@ async def resolve_edges_to_text(retrieved_edges: List[Edge]) -> str:
 
         - str: A formatted string representation of the nodes and their connections.
     """
+    # Defense-in-depth: filter out viz-only edges that should not appear in LLM context
+    retrieved_edges = [
+        e for e in retrieved_edges
+        if not (hasattr(e, 'node1') and e.node1.attributes.get("_viz_only") == "__viz_only__")
+    ]
 
     def _get_nodes(retrieved_edges: List[Edge]) -> dict:
         def _get_title(text: str, first_n_words: int = 7, top_n_words: int = 3) -> str:

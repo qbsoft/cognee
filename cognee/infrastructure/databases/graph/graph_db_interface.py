@@ -385,6 +385,26 @@ class GraphDBInterface(ABC):
         """
         raise NotImplementedError
 
+    async def get_batch_neighbor_edges(self, node_ids: List[str]) -> List[Tuple]:
+        """
+        Batch query 1-hop neighbor edges for multiple nodes.
+
+        Optional method — not all backends need to implement this.
+        Used by the retriever to expand graph visualization context.
+
+        Parameters:
+        -----------
+
+            - node_ids (List[str]): List of node IDs to find neighbors for.
+
+        Returns:
+        --------
+
+            - List of tuples: (source_id, target_id, rel_type, rel_props, source_props, target_props)
+        """
+        logger.debug("get_batch_neighbor_edges() not implemented for this backend")
+        return []
+
     @abstractmethod
     async def get_connections(
         self, node_id: Union[str, UUID]

@@ -89,7 +89,7 @@ def transform_context_to_graph(context: List[Edge]):
     edges = {}
 
     # Internal attribute keys that should not be exposed to the frontend
-    _internal_keys = {"_kd_marker"}
+    _internal_keys = {"_kd_marker", "_viz_only"}
 
     for triplet in context:
         # 处理节点1

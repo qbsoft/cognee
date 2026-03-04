@@ -536,6 +536,43 @@ class Neo4jAdapter(GraphDBInterface):
             for result in results
         ]
 
+    async def get_batch_neighbor_edges(self, node_ids: List[str]) -> List[Tuple[str, str, str, Dict[str, Any], Dict[str, Any], Dict[str, Any]]]:
+        """
+        Batch query 1-hop neighbor edges for multiple nodes in a single Cypher call.
+
+        Parameters:
+        -----------
+            - node_ids (List[str]): List of node IDs to find neighbors for.
+
+        Returns:
+        --------
+            - List of tuples: (source_id, target_id, rel_type, rel_props, source_props, target_props)
+        """
+        if not node_ids:
+            return []
+
+        query = f"""
+        MATCH (n:`{BASE_LABEL}`)-[r]-(m:`{BASE_LABEL}`)
+        WHERE n.id IN $node_ids
+        RETURN n.id AS source, m.id AS target,
+               type(r) AS rel_type, properties(r) AS rel_props,
+               properties(n) AS source_props, properties(m) AS target_props
+        """
+
+        results = await self.query(query, dict(node_ids=node_ids))
+
+        return [
+            (
+                result["source"],
+                result["target"],
+                result["rel_type"],
+                result.get("rel_props", {}),
+                result.get("source_props", {}),
+                result.get("target_props", {}),
+            )
+            for result in results
+        ]
+
     async def get_disconnected_nodes(self) -> list[str]:
         """
         Find and return nodes that are not connected to any other nodes in the graph.

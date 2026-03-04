@@ -29,6 +29,10 @@ logger = get_logger("GraphCompletionRetriever")
 # Marker used to identify KD synthetic edges in the context list
 _KD_EDGE_MARKER = "__kd_ref__"
 
+# Marker used to identify neighbor-expanded edges for visualization only.
+# These edges enrich the graph display but are excluded from LLM answer context.
+_VIZ_ONLY_MARKER = "__viz_only__"
+
 
 class GraphCompletionRetriever(BaseGraphRetriever):
     """
@@ -195,6 +199,13 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 len(kd_edges), query[:50],
             )
 
+        # Expand with 1-hop neighbor edges for richer graph visualization.
+        # These are marked _VIZ_ONLY and excluded from LLM answer context.
+        viz_edges = await self._expand_neighbors_for_viz(triplets)
+        if viz_edges:
+            triplets = list(triplets) + viz_edges
+            logger.info("Added %d neighbor edges for visualization", len(viz_edges))
+
         if len(triplets) == 0:
             logger.warning("Empty context was provided to the completion")
             return []
@@ -304,6 +315,109 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             logger.warning("KnowledgeDistillation search failed: %s", e)
             return []
 
+    async def _expand_neighbors_for_viz(self, triplets: List[Edge]) -> List[Edge]:
+        """
+        Expand the context with 1-hop neighbor edges from Neo4j for richer
+        graph visualization. These edges are marked with _VIZ_ONLY_MARKER
+        so they are excluded from LLM answer generation.
+
+        MUST be called within the dataset database context (ContextVar set).
+        """
+        try:
+            graph_engine = await get_graph_engine()
+
+            # Check if graph engine supports batch neighbor query
+            if not hasattr(graph_engine, 'get_batch_neighbor_edges'):
+                logger.debug("Graph engine does not support get_batch_neighbor_edges, skipping")
+                return []
+
+            # Collect unique node IDs from existing triplets (skip KD/synthetic nodes)
+            node_ids = set()
+            existing_edge_keys = set()
+            for edge in triplets:
+                n1_id = str(edge.node1.id)
+                n2_id = str(edge.node2.id)
+                # Skip KD synthetic nodes (they have ids like "kd_0")
+                if not n1_id.startswith("kd_"):
+                    node_ids.add(n1_id)
+                if not n2_id.startswith("kd_"):
+                    node_ids.add(n2_id)
+                # Track existing edges to avoid duplicates
+                existing_edge_keys.add((n1_id, n2_id))
+                existing_edge_keys.add((n2_id, n1_id))
+
+            if not node_ids:
+                return []
+
+            # Batch query Neo4j for 1-hop neighbors
+            neighbor_results = await graph_engine.get_batch_neighbor_edges(list(node_ids))
+
+            if not neighbor_results:
+                return []
+
+            # Build Edge objects for new (non-duplicate) neighbor edges
+            viz_edges = []
+            seen_pairs = set()
+            max_viz_edges = 30  # Limit to avoid frontend overload
+
+            for source_id, target_id, rel_type, rel_props, source_props, target_props in neighbor_results:
+                # Skip edges that already exist in triplets
+                if (source_id, target_id) in existing_edge_keys:
+                    continue
+                # Skip duplicate pairs in results
+                pair_key = (source_id, target_id) if source_id < target_id else (target_id, source_id)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                # Create Node objects with viz-only marker
+                node1 = Node(
+                    node_id=source_id,
+                    attributes={
+                        "name": source_props.get("name", ""),
+                        "type": source_props.get("type", "unknown"),
+                        "description": source_props.get("description", ""),
+                        "_viz_only": _VIZ_ONLY_MARKER,
+                    },
+                )
+                node2 = Node(
+                    node_id=target_id,
+                    attributes={
+                        "name": target_props.get("name", ""),
+                        "type": target_props.get("type", "unknown"),
+                        "description": target_props.get("description", ""),
+                        "_viz_only": _VIZ_ONLY_MARKER,
+                    },
+                )
+
+                # Clean relationship name
+                clean_rel = rel_type.replace("`", "") if rel_type else "related_to"
+
+                edge = Edge(
+                    node1=node1,
+                    node2=node2,
+                    attributes={
+                        "relationship_name": clean_rel,
+                        "relationship_type": clean_rel,
+                    },
+                    directed=True,
+                )
+                viz_edges.append(edge)
+
+                if len(viz_edges) >= max_viz_edges:
+                    break
+
+            if viz_edges:
+                logger.info(
+                    "Neighbor expansion: %d viz-only edges from %d seed nodes",
+                    len(viz_edges), len(node_ids),
+                )
+            return viz_edges
+
+        except Exception as e:
+            logger.warning("Neighbor expansion failed (non-fatal): %s", e)
+            return []
+
     async def get_completion(
         self,
         query: str,
@@ -332,10 +446,14 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         if triplets is None:
             triplets = await self.get_context(query)
 
-        # Separate KD edges from graph edges for distinct formatting
+        # Separate KD edges and viz-only edges from graph edges for distinct formatting
         graph_edges = []
         kd_texts = []
         for edge in triplets:
+            # Skip viz-only edges — they are for graph display, not LLM context
+            if (hasattr(edge, 'node1') and
+                    edge.node1.attributes.get("_viz_only") == _VIZ_ONLY_MARKER):
+                continue
             if (hasattr(edge, 'node1') and
                     edge.node1.attributes.get("_kd_marker") == _KD_EDGE_MARKER):
                 kd_texts.append(edge.node1.attributes.get("text", ""))
