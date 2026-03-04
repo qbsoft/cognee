@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-01 (Phase 15 完成)
+**最后更新**: 2026-03-04 (Phase 16 完成)
 
 **正在进行的任务**: 无
 
@@ -136,6 +136,18 @@
 - 创建 `redistill.py` 工具脚本（仅重跑蒸馏步骤，无需完整 cognify）
 - 修改文件：`graph_completion_retriever.py`（KD集成）、`answer_simple_question.txt`、`distill_knowledge_system.txt`、`test_ragas_direct.py`
 
+### Phase 16: 图谱可视化优化 + Cognify 性能优化 (10 files, 4 commits)
+- Neo4j 邻居扩展: 搜索图谱 1-hop 邻居边展示 (get_batch_neighbor_edges + _expand_neighbors_for_viz)
+- 图谱节点过滤: 隐藏 NodeSet/KD/Timestamp/DocumentChunk/TextSummary 内部节点
+- 三层过滤防线: transform_context_to_graph(前端) + graph_completion_retriever(LLM) + get_formatted_graph_data(完整图谱)
+- 修复图索引"假失败": mark_all_stages_completed 跳过过严的 verify_data_integrity
+- 修复 reprocess 端点 pipeline_status 嵌套结构 bug + flag_modified
+- LLM 并发信号量: extract_graph + summarize 添加 asyncio.Semaphore (默认 8 并发)
+- Cognify 中间进度追踪: graph_indexing/vector_indexing 立即标为 "in_progress"
+- YAML 并发配置: config/concurrency.yaml (max_concurrent_llm_calls)
+- 性能优化设计文档: docs/plans/2026-03-04-cognify-performance-optimization.md
+- 行业调研: GraphRAG/LightRAG/RAGFlow/Dify/LlamaIndex/E2GraphRAG 方案对比
+
 ### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
 - A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
 - A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
@@ -150,10 +162,16 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1351 passed, 4 skipped (42 commits)
+**测试总数**: 1351 passed, 4 skipped (48 commits)
 
-**Git Commits (43个)**:
+**Git Commits (49个)**:
 ```
+ce775565 feat: hide DocumentChunk nodes from graph, add LLM concurrency control and progress tracking
+fba7c260 fix: filter NodeSet/KD nodes from graph visualization and fix pipeline verification
+2ed8311f fix: prevent premature graph/vector verification in add_pipeline and improve graph visualization
+77691fc9 feat: add Neo4j neighbor expansion for richer graph visualization
+80235de4 fix: enable neighbor discovery in knowledge graph edge filtering
+c4622e4a fix: improve knowledge graph visualization and search diagnostics
 (pending) eval: achieve >=93% RAGAS with fully automatic knowledge distillation
 9f1655ad feat: add auto knowledge distillation module for cognify pipeline
 95fea5a2 eval: add RAGAS LLM-as-Judge evaluation achieving 95.1% precision
@@ -199,12 +217,21 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-15 已完成 ✅
+- 所有 Phase 0-16 已完成 ✅
 - **全自动知识蒸馏已验证通过** (Phase 15): 无需手工 lgl-facts，RAGAS >=93% 目标达成
   - 蒸馏配置: `config/distillation.yaml` (enabled: true/false)
   - 重新蒸馏工具: `redistill.py`（仅重跑蒸馏，无需完整 cognify）
 - RAGAS LLM-as-Judge 综合精度: **95.2% / 93.3% / 94.9%**（全自动蒸馏，连续3轮 >=93%）
 - 关键词精度: 25/25 = 100% (test_retrieval_round2.py)
+- **性能优化 Phase A 已完成** (Phase 16):
+  - LLM 并发信号量: `config/concurrency.yaml` (max_concurrent_llm_calls: 8)
+  - 图谱可视化: 隐藏 NodeSet/KD/Timestamp/DocumentChunk/TextSummary
+  - Cognify 进度: graph_indexing/vector_indexing 立即显示 "in_progress"
+  - 图索引假失败: 已修复 verify_data_integrity 过严问题
+- **性能优化 Phase B 待实施** (参见 docs/plans/2026-03-04-cognify-performance-optimization.md):
+  - B1: 双模型策略 (提取用 Qwen-turbo, 回答用 Qwen-plus) → 预计 3-5x 提速
+  - B2: LLM 结果缓存 (content_hash -> extraction_result) → 预计 1.5-3x
+  - B3: 任务级并行 (extract_graph || summarize_text) → 预计 1.3x
 - 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
 - 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
