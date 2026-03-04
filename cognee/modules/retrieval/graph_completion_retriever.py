@@ -33,6 +33,13 @@ _KD_EDGE_MARKER = "__kd_ref__"
 # These edges enrich the graph display but are excluded from LLM answer context.
 _VIZ_ONLY_MARKER = "__viz_only__"
 
+# Internal/structural node types to exclude from LLM context and graph visualization.
+# These are infrastructure nodes (containers, timestamps) that add noise without value.
+_INTERNAL_NODE_TYPES = {
+    "NodeSet", "nodeset",
+    "Timestamp", "timestamp",
+}
+
 
 class GraphCompletionRetriever(BaseGraphRetriever):
     """
@@ -360,12 +367,6 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             seen_pairs = set()
             max_viz_edges = 30  # Limit to avoid frontend overload
 
-            # Internal node types to exclude from visualization
-            _INTERNAL_NODE_TYPES = {
-                "NodeSet", "nodeset",
-                "Timestamp", "timestamp",
-            }
-
             for source_id, target_id, rel_type, rel_props, source_props, target_props in neighbor_results:
                 # Skip edges that already exist in triplets
                 if (source_id, target_id) in existing_edge_keys:
@@ -470,6 +471,12 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             if (hasattr(edge, 'node1') and
                     edge.node1.attributes.get("_viz_only") == _VIZ_ONLY_MARKER):
                 continue
+            # Skip edges involving internal/structural node types (NodeSet, Timestamp, etc.)
+            if hasattr(edge, 'node1') and hasattr(edge, 'node2'):
+                n1_type = edge.node1.attributes.get("type", "")
+                n2_type = edge.node2.attributes.get("type", "")
+                if n1_type in _INTERNAL_NODE_TYPES or n2_type in _INTERNAL_NODE_TYPES:
+                    continue
             if (hasattr(edge, 'node1') and
                     edge.node1.attributes.get("_kd_marker") == _KD_EDGE_MARKER):
                 kd_texts.append(edge.node1.attributes.get("text", ""))

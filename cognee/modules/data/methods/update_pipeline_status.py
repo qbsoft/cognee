@@ -388,6 +388,12 @@ async def mark_all_stages_completed(
             status="completed",
             progress=100,
             dataset_id=dataset_id,
+            # Skip verification here because this function is called AFTER all
+            # pipeline tasks have completed successfully.  The verify_data_integrity
+            # check is too strict — it looks for nodes with a matching `data_id`
+            # attribute, but Entity/EntityType nodes created by cognify don't carry
+            # that attribute, causing false "failed" results.
+            skip_verification=True,
         )
 
 

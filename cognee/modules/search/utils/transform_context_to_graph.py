@@ -84,6 +84,16 @@ def _get_node_label(node_attributes: dict, node_id: str) -> str:
     return f"节点_{str(node_id)[:8]}"
 
 
+
+# Internal/structural node types that should be hidden from graph visualization.
+# These are infrastructure nodes that clutter the graph without user value.
+_HIDDEN_NODE_TYPES = {
+    "NodeSet", "nodeset",
+    "KnowledgeDistillation", "knowledgedistillation",
+    "Timestamp", "timestamp",
+}
+
+
 def transform_context_to_graph(context: List[Edge]):
     nodes = {}
     edges = {}
@@ -94,6 +104,12 @@ def transform_context_to_graph(context: List[Edge]):
     for triplet in context:
         # Skip KD self-loop edges (node1.id == node2.id) — they create isolated nodes
         if triplet.node1.id == triplet.node2.id:
+            continue
+
+        # Skip edges where either node is an internal/structural type
+        n1_type = triplet.node1.attributes.get("type", "")
+        n2_type = triplet.node2.attributes.get("type", "")
+        if n1_type in _HIDDEN_NODE_TYPES or n2_type in _HIDDEN_NODE_TYPES:
             continue
 
         # 处理节点1

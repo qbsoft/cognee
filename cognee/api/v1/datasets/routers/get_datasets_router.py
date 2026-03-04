@@ -851,31 +851,37 @@ def get_datasets_router() -> APIRouter:
                 )
 
             # Reset pipeline status for specified stages
+            # Use the correct nested structure: pipeline_status[stage][dataset_id_str] = {...}
             db_engine = get_relational_engine()
+            dataset_id_str = str(dataset_id)
             async with db_engine.get_async_session() as session:
                 for data in data_items:
                     if not data.pipeline_status:
                         data.pipeline_status = {}
-                    
-                    # Reset each specified stage to pending
+
+                    # Reset each specified stage to pending (nested structure)
                     for stage in stages:
                         if stage in ["parsing", "chunking", "graph_indexing", "vector_indexing"]:
-                            data.pipeline_status[stage] = {
+                            if not isinstance(data.pipeline_status.get(stage), dict):
+                                data.pipeline_status[stage] = {}
+                            data.pipeline_status[stage][dataset_id_str] = {
                                 "status": "pending",
                                 "progress": 0,
                                 "started_at": None,
                                 "completed_at": None,
                                 "error": None
                             }
-                    
+
                     # Clear old incremental loading status to force reprocessing
                     if "cognify_pipeline" in data.pipeline_status:
                         dataset_status = data.pipeline_status.get("cognify_pipeline", {})
                         if str(dataset_id) in dataset_status:
                             del dataset_status[str(dataset_id)]
-                    
+
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(data, "pipeline_status")
                     session.add(data)
-                
+
                 await session.commit()
 
             logger.info(f"[REPROCESS] 已重置 {len(data_items)} 个文件的pipeline_status为 pending")

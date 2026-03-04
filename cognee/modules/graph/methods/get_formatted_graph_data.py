@@ -77,6 +77,15 @@ def _get_node_label(node_data: dict, node_id: str) -> str:
     return f"节点_{str(node_id)[:8]}"
 
 
+# Node types to hide from the full graph visualization.
+# These are internal structural nodes that add clutter without user value.
+_HIDDEN_NODE_TYPES = {
+    "NodeSet", "nodeset",
+    "KnowledgeDistillation", "knowledgedistillation",
+    "Timestamp", "timestamp",
+}
+
+
 async def get_formatted_graph_data(dataset_id: UUID, user: User):
     dataset = await get_authorized_dataset(user, dataset_id)
     if not dataset:
@@ -86,6 +95,22 @@ async def get_formatted_graph_data(dataset_id: UUID, user: User):
 
     graph_client = await get_graph_engine()
     (nodes, edges) = await graph_client.get_graph_data()
+
+    # Filter out internal node types that shouldn't appear in visualization
+    hidden_node_ids = set()
+    visible_nodes = []
+    for node in nodes:
+        node_type = node[1].get("type", "unknown")
+        if node_type in _HIDDEN_NODE_TYPES:
+            hidden_node_ids.add(str(node[0]))
+        else:
+            visible_nodes.append(node)
+
+    # Filter out edges connected to hidden nodes
+    visible_edges = [
+        edge for edge in edges
+        if str(edge[0]) not in hidden_node_ids and str(edge[1]) not in hidden_node_ids
+    ]
 
     return {
         "nodes": list(
@@ -101,7 +126,7 @@ async def get_formatted_graph_data(dataset_id: UUID, user: User):
                         and value is not None
                     },
                 },
-                nodes,
+                visible_nodes,
             )
         ),
         "edges": list(
@@ -111,7 +136,7 @@ async def get_formatted_graph_data(dataset_id: UUID, user: User):
                     "target": str(edge[1]),
                     "label": translate_relationship_name(str(edge[2])),
                 },
-                edges,
+                visible_edges,
             )
         ),
     }
