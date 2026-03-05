@@ -39,7 +39,7 @@ async def extract_event_entities(content: str, response_model: Type[BaseModel]):
     system_prompt = render_prompt(prompt_path, {}, base_directory=base_directory)
 
     content_graph = await LLMGateway.acreate_structured_output(
-        content, system_prompt, response_model
+        content, system_prompt, response_model, task_type="extraction"
     )
 
     return content_graph

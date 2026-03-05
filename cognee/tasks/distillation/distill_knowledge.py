@@ -31,6 +31,20 @@ PROMPTS_DIR = get_absolute_path("./tasks/distillation/prompts")
 DEFAULT_CONTEXT_CHAR_LIMIT = 24000
 
 
+def _get_extraction_model() -> str:
+    """Get the extraction model from YAML config, fallback to default LLM_MODEL."""
+    try:
+        from cognee.infrastructure.config.yaml_config import get_module_config
+        model_cfg = get_module_config("model_selection").get("models", {})
+        extraction_model = model_cfg.get("extraction_model", "")
+        if extraction_model:
+            return extraction_model
+    except Exception:
+        pass
+    from cognee.infrastructure.llm.config import get_llm_config
+    return get_llm_config().llm_model
+
+
 class DistillationItem(BaseModel):
     """Single distillation item returned by the LLM."""
     type: str = Field(description="Distillation type: enumeration, aggregation, disambiguation, negation, or qa")
@@ -327,11 +341,13 @@ async def _call_llm_distill(document_text: str) -> List[DistillationItem]:
     )
 
     llm_config = get_llm_config()
+    effective_model = _get_extraction_model()
+    logger.info(f"Using model: {effective_model} for distillation")
 
     try:
         # Use streaming to keep connection alive during long distillation
         response = await litellm.acompletion(
-            model=llm_config.llm_model,
+            model=effective_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_input},
@@ -390,10 +406,12 @@ async def _call_llm_merge(distillation_text: str) -> List[DistillationItem]:
     )
 
     llm_config = get_llm_config()
+    effective_model = _get_extraction_model()
+    logger.info(f"Using model: {effective_model} for merge")
 
     try:
         response = await litellm.acompletion(
-            model=llm_config.llm_model,
+            model=effective_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_input},

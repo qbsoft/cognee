@@ -28,7 +28,9 @@ def get_mock_summarized_code():
 async def extract_summary(content: str, response_model: Type[BaseModel]):
     system_prompt = read_query_prompt("summarize_content.txt")
 
-    llm_output = await LLMGateway.acreate_structured_output(content, system_prompt, response_model)
+    llm_output = await LLMGateway.acreate_structured_output(
+        content, system_prompt, response_model, task_type="extraction"
+    )
 
     return llm_output
 
