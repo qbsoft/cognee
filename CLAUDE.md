@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-04 (Phase 16 完成)
+**最后更新**: 2026-03-05 (Phase 17 完成)
 
 **正在进行的任务**: 无
 
@@ -148,6 +148,24 @@
 - 性能优化设计文档: docs/plans/2026-03-04-cognify-performance-optimization.md
 - 行业调研: GraphRAG/LightRAG/RAGFlow/Dify/LlamaIndex/E2GraphRAG 方案对比
 
+### Phase 17: Cognify 性能优化 Phase B (13 files, 4 commits)
+- B1: 双模型策略 — 提取/摘要/蒸馏用快速模型, 回答用强模型
+  - 新建 `config/model_selection.yaml` (extraction_model / answer_model)
+  - `LLMGateway` 添加 `task_type` 路由 + `_get_model_for_task()` YAML 读取
+  - `get_llm_client()` 添加 `model_override` 参数
+  - 5 个提取函数添加 `task_type="extraction"` (extract_content_graph/summary/categories/event_entities/event_graph)
+  - `distill_knowledge` 添加 `_get_extraction_model()` 辅助函数
+- B2: LLM 响应缓存 — 内容哈希去重
+  - 新建 `cognee/infrastructure/llm/llm_cache.py` (SHA256 文件缓存)
+  - `LLMGateway.acreate_structured_output` 改为 async + 缓存集成
+  - 仅对 extraction 任务缓存，回答生成永不缓存
+  - 配置: `config/model_selection.yaml` cache 节 (enabled/cache_dir/ttl_seconds)
+- B3: 任务级并行 — distill_knowledge || summarize_text 并发
+  - 新建 `cognee/tasks/parallel_processing.py` (asyncio.gather 包装)
+  - 修改 cognify.py: 蒸馏启用时替换串行为并行执行
+  - 蒸馏未启用时管道行为完全不变
+- 设计文档: `docs/plans/2026-03-05-phase-b-dual-model-and-caching.md`
+
 ### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
 - A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
 - A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
@@ -162,10 +180,14 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1351 passed, 4 skipped (48 commits)
+**测试总数**: 1351 passed, 4 skipped (52 commits)
 
-**Git Commits (49个)**:
+**Git Commits (53个)**:
 ```
+902bfaa2 feat(B3): add parallel distillation + summarization in cognify pipeline
+c0623db4 feat(B2): add content-hash based LLM response cache
+d3b0a358 feat(B1): route all extraction/distillation LLM calls to fast model
+7a4ca863 feat(B1): add dual-model routing infrastructure
 ce775565 feat: hide DocumentChunk nodes from graph, add LLM concurrency control and progress tracking
 fba7c260 fix: filter NodeSet/KD nodes from graph visualization and fix pipeline verification
 2ed8311f fix: prevent premature graph/vector verification in add_pipeline and improve graph visualization
@@ -228,10 +250,12 @@ deb7b119 feat: add graph validation (T2A05)
   - 图谱可视化: 隐藏 NodeSet/KD/Timestamp/DocumentChunk/TextSummary
   - Cognify 进度: graph_indexing/vector_indexing 立即显示 "in_progress"
   - 图索引假失败: 已修复 verify_data_integrity 过严问题
-- **性能优化 Phase B 待实施** (参见 docs/plans/2026-03-04-cognify-performance-optimization.md):
-  - B1: 双模型策略 (提取用 Qwen-turbo, 回答用 Qwen-plus) → 预计 3-5x 提速
-  - B2: LLM 结果缓存 (content_hash -> extraction_result) → 预计 1.5-3x
-  - B3: 任务级并行 (extract_graph || summarize_text) → 预计 1.3x
+- **性能优化 Phase B 已实施** (Phase 17):
+  - B1: 双模型策略已实现 → 配置 `config/model_selection.yaml` 中 `extraction_model`
+  - B2: LLM 缓存已实现 → 配置 `config/model_selection.yaml` 中 `cache.enabled`
+  - B3: 任务并行已实现 → 蒸馏启用时自动并行
+- 开发者需要: 在 `config/model_selection.yaml` 设置 `extraction_model` (如 `dashscope/qwen-turbo-latest`) 以启用双模型
+- 开发者需要: 首次启用后运行 RAGAS 验证精度 >=93%
 - 开发者需要: 在 .env 中设置 GRAPH_PROMPT_PATH=generate_graph_prompt_chinese_business.txt
 - 开发者需要: 重新摄入数据以重建 Entity/EntityType 向量索引 (因为 index_fields 已扩展)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
