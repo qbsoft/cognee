@@ -34,17 +34,33 @@ class LLMGateway:
     """
 
     @staticmethod
-    def acreate_structured_output(
+    async def acreate_structured_output(
         text_input: str, system_prompt: str, response_model: Type[BaseModel],
         task_type: str = "default"
-    ) -> Coroutine:
+    ):
+        from cognee.infrastructure.llm.llm_cache import (
+            get_cached_response, set_cached_response, is_cache_enabled
+        )
+
         llm_config = get_llm_config()
+        model_override = _get_model_for_task(task_type)
+        effective_model = model_override or llm_config.llm_model
+
+        # Check cache (only for extraction tasks)
+        if task_type == "extraction" and is_cache_enabled():
+            cached = get_cached_response(
+                effective_model, system_prompt, text_input, response_model
+            )
+            if cached is not None:
+                return cached
+
+        # Call LLM
         if llm_config.structured_output_framework.upper() == "BAML":
             from cognee.infrastructure.llm.structured_output_framework.baml.baml_src.extraction import (
                 acreate_structured_output,
             )
 
-            return acreate_structured_output(
+            result = await acreate_structured_output(
                 text_input=text_input,
                 system_prompt=system_prompt,
                 response_model=response_model,
@@ -54,11 +70,18 @@ class LLMGateway:
                 get_llm_client,
             )
 
-            model_override = _get_model_for_task(task_type)
             llm_client = get_llm_client(model_override=model_override)
-            return llm_client.acreate_structured_output(
+            result = await llm_client.acreate_structured_output(
                 text_input=text_input, system_prompt=system_prompt, response_model=response_model
             )
+
+        # Store in cache (only for extraction tasks)
+        if task_type == "extraction" and is_cache_enabled():
+            set_cached_response(
+                effective_model, system_prompt, text_input, response_model, result
+            )
+
+        return result
 
     @staticmethod
     def create_structured_output(

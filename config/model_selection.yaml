@@ -11,3 +11,12 @@ models:
   # 回答模型: 推理能力强，适合回答生成
   # 留空表示使用 .env 中的 LLM_MODEL (默认行为)
   answer_model: ""
+
+# LLM 响应缓存配置
+cache:
+  # 是否启用缓存 (仅对 extraction 类任务生效)
+  enabled: true
+  # 缓存目录 (相对于项目根目录)
+  cache_dir: ".cognee_cache/llm"
+  # 缓存过期时间 (秒), 默认 7 天
+  ttl_seconds: 604800
