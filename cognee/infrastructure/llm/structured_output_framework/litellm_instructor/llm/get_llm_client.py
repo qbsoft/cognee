@@ -34,7 +34,7 @@ class LLMProvider(Enum):
     MISTRAL = "mistral"
 
 
-def get_llm_client(raise_api_key_error: bool = True):
+def get_llm_client(raise_api_key_error: bool = True, model_override: str = None):
     """
     Get the LLM client based on the configuration using Enums.
 
@@ -42,6 +42,15 @@ def get_llm_client(raise_api_key_error: bool = True):
     initializes the appropriate LLM client adapter accordingly. It raises an
     LLMAPIKeyNotSetError if the LLM API key is not set for certain providers or if the provider
     is unsupported.
+
+    Parameters:
+    -----------
+    raise_api_key_error : bool
+        If True (default), raises LLMAPIKeyNotSetError when the API key is not set.
+    model_override : str, optional
+        If provided, overrides the model name from llm_config. The provider is still
+        determined from llm_config.llm_provider. This enables dual-model strategies
+        where extraction tasks use a fast model and answer tasks use a strong model.
 
     Returns:
     --------
@@ -51,6 +60,9 @@ def get_llm_client(raise_api_key_error: bool = True):
     """
     llm_config = get_llm_config()
 
+    # Compute effective model: use override if provided, otherwise use config default
+    effective_model = model_override if model_override else llm_config.llm_model
+
     provider = LLMProvider(llm_config.llm_provider)
 
     # Check if max_token value is defined in liteLLM for given model
@@ -59,7 +71,7 @@ def get_llm_client(raise_api_key_error: bool = True):
         get_model_max_completion_tokens,
     )  # imported here to avoid circular imports
 
-    model_max_completion_tokens = get_model_max_completion_tokens(llm_config.llm_model)
+    model_max_completion_tokens = get_model_max_completion_tokens(effective_model)
     max_completion_tokens = (
         model_max_completion_tokens
         if model_max_completion_tokens
@@ -78,7 +90,7 @@ def get_llm_client(raise_api_key_error: bool = True):
             api_key=llm_config.llm_api_key,
             endpoint=llm_config.llm_endpoint,
             api_version=llm_config.llm_api_version,
-            model=llm_config.llm_model,
+            model=effective_model,
             transcription_model=llm_config.transcription_model,
             max_completion_tokens=max_completion_tokens,
             streaming=llm_config.llm_streaming,
@@ -98,7 +110,7 @@ def get_llm_client(raise_api_key_error: bool = True):
         return OllamaAPIAdapter(
             llm_config.llm_endpoint,
             llm_config.llm_api_key,
-            llm_config.llm_model,
+            effective_model,
             "Ollama",
             max_completion_tokens=max_completion_tokens,
         )
@@ -109,7 +121,7 @@ def get_llm_client(raise_api_key_error: bool = True):
         )
 
         return AnthropicAdapter(
-            max_completion_tokens=max_completion_tokens, model=llm_config.llm_model
+            max_completion_tokens=max_completion_tokens, model=effective_model
         )
 
     elif provider == LLMProvider.CUSTOM:
@@ -123,7 +135,7 @@ def get_llm_client(raise_api_key_error: bool = True):
         return GenericAPIAdapter(
             llm_config.llm_endpoint,
             llm_config.llm_api_key,
-            llm_config.llm_model,
+            effective_model,
             "Custom",
             max_completion_tokens=max_completion_tokens,
             fallback_api_key=llm_config.fallback_api_key,
@@ -141,7 +153,7 @@ def get_llm_client(raise_api_key_error: bool = True):
 
         return GeminiAdapter(
             api_key=llm_config.llm_api_key,
-            model=llm_config.llm_model,
+            model=effective_model,
             max_completion_tokens=max_completion_tokens,
             endpoint=llm_config.llm_endpoint,
             api_version=llm_config.llm_api_version,
@@ -157,7 +169,7 @@ def get_llm_client(raise_api_key_error: bool = True):
 
         return MistralAdapter(
             api_key=llm_config.llm_api_key,
-            model=llm_config.llm_model,
+            model=effective_model,
             max_completion_tokens=max_completion_tokens,
             endpoint=llm_config.llm_endpoint,
         )
@@ -172,7 +184,7 @@ def get_llm_client(raise_api_key_error: bool = True):
 
         return MistralAdapter(
             api_key=llm_config.llm_api_key,
-            model=llm_config.llm_model,
+            model=effective_model,
             max_completion_tokens=max_completion_tokens,
             endpoint=llm_config.llm_endpoint,
         )
