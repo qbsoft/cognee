@@ -57,6 +57,41 @@ _INTERNAL_NODE_TYPES = {
 }
 
 
+def _get_routing_config() -> dict:
+    """Read document routing configuration."""
+    try:
+        from cognee.infrastructure.config.yaml_config import get_module_config
+        search_cfg = get_module_config("search")
+        return search_cfg.get("search", {}).get("document_routing", {})
+    except Exception:
+        return {}
+
+
+def _should_enable_routing(doc_count: int) -> bool:
+    """Check if document routing should be enabled based on document count."""
+    config = _get_routing_config()
+    min_count = config.get("min_doc_count", 20)
+    enabled = config.get("enabled", True)
+    return enabled and doc_count > min_count
+
+
+def _filter_results_by_doc_names(results, doc_names):
+    """Filter vector search results to only those matching document names.
+
+    Uses the [来源: docname] prefix already present in KD vectors.
+    If doc_names is None, all results pass through (no filtering).
+    """
+    if doc_names is None:
+        return results
+
+    filtered = []
+    for result in results:
+        text = result.payload.get("text", "") if hasattr(result, 'payload') else ""
+        if any(f"[来源: {name}]" in text for name in doc_names):
+            filtered.append(result)
+    return filtered
+
+
 class GraphCompletionRetriever(BaseGraphRetriever):
     """
     Retriever for handling graph-based completion searches.
@@ -210,11 +245,44 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 logger.warning("DocumentChunk fallback failed: %s", fallback_err)
                 triplets = []
 
+        # Document routing for large datasets
+        routed_doc_names = None
+        try:
+            from cognee.infrastructure.databases.vector import get_vector_engine as get_ve
+            ve = get_ve()
+            has_index_cards = await ve.has_collection("DocumentIndexCard_summary")
+            if has_index_cards:
+                card_results = await ve.search(
+                    "DocumentIndexCard_summary", query, limit=100,
+                )
+                doc_count = len(card_results) if card_results else 0
+
+                if _should_enable_routing(doc_count):
+                    config = _get_routing_config()
+                    top_k = config.get("top_k", 10)
+                    confidence_threshold = config.get("confidence_threshold", 0.3)
+
+                    if card_results and card_results[0].score < confidence_threshold:
+                        top_cards = card_results[:top_k]
+                        routed_doc_names = set()
+                        for card in top_cards:
+                            name = card.payload.get("doc_name", "")
+                            if name:
+                                routed_doc_names.add(name)
+                        logger.info(
+                            f"Document routing: {doc_count} docs, selected {len(routed_doc_names)} "
+                            f"(top score: {card_results[0].score:.3f})"
+                        )
+                    else:
+                        logger.info("Document routing: low confidence, using full search")
+        except Exception as e:
+            logger.debug(f"Document routing skipped: {e}")
+
         # Supplement with KnowledgeDistillation direct vector search.
         # KD nodes have no graph edges, so brute_force_triplet_search discards them.
         # We search the vector index directly and create synthetic Edge objects
         # with a special marker so get_completion() can format them prominently.
-        kd_edges = await self._search_knowledge_distillation(query)
+        kd_edges = await self._search_knowledge_distillation(query, doc_names=routed_doc_names)
         if kd_edges:
             triplets = list(triplets) + kd_edges
             logger.info(
@@ -336,7 +404,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             logger.warning("DocumentChunk search failed: %s", e)
             return []
 
-    async def _search_knowledge_distillation(self, query: str) -> List[Edge]:
+    async def _search_knowledge_distillation(self, query: str, doc_names=None) -> List[Edge]:
         """
         Direct vector search on KnowledgeDistillation_text collection.
 
@@ -346,15 +414,24 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Results are re-ranked by keyword overlap with the query so that KDs
         containing exact query terms are presented first.
 
+        When doc_names is provided (from document routing), results are filtered
+        to only include KD vectors from the specified documents. The search limit
+        is increased to 100 to ensure enough candidates survive filtering.
+
         MUST be called within the dataset database context (ContextVar set).
         """
         try:
             vector_engine = get_vector_engine()
+            search_limit = 100 if doc_names else 30
             results = await vector_engine.search(
-                "KnowledgeDistillation_text", query, limit=30,
+                "KnowledgeDistillation_text", query, limit=search_limit,
             )
             if not results:
                 return []
+
+            if doc_names:
+                results = _filter_results_by_doc_names(results, doc_names)
+                logger.info(f"KD filtered: {len(results)} results for {len(doc_names)} documents")
 
             # Extract query keywords using 2-char CJK bigrams + numbers.
             # We use bigrams instead of full CJK runs because Chinese text
