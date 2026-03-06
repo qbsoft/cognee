@@ -20,6 +20,10 @@ def _get_model_for_task(task_type: str):
     if task_type == "extraction":
         model = model_cfg.get("extraction_model", "")
         return model if model else None
+    elif task_type == "graph_extraction":
+        # Graph extraction is quality-critical, uses dedicated model or default
+        model = model_cfg.get("graph_extraction_model", "")
+        return model if model else None
     elif task_type == "answer":
         model = model_cfg.get("answer_model", "")
         return model if model else None
@@ -46,8 +50,8 @@ class LLMGateway:
         model_override = _get_model_for_task(task_type)
         effective_model = model_override or llm_config.llm_model
 
-        # Check cache (only for extraction tasks)
-        if task_type == "extraction" and is_cache_enabled():
+        # Check cache (for extraction and graph_extraction tasks)
+        if task_type in ("extraction", "graph_extraction") and is_cache_enabled():
             cached = get_cached_response(
                 effective_model, system_prompt, text_input, response_model
             )
@@ -75,8 +79,8 @@ class LLMGateway:
                 text_input=text_input, system_prompt=system_prompt, response_model=response_model
             )
 
-        # Store in cache (only for extraction tasks)
-        if task_type == "extraction" and is_cache_enabled():
+        # Store in cache (for extraction and graph_extraction tasks)
+        if task_type in ("extraction", "graph_extraction") and is_cache_enabled():
             set_cached_response(
                 effective_model, system_prompt, text_input, response_model, result
             )

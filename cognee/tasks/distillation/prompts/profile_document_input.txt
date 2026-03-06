@@ -1,0 +1,7 @@
+请分析以下文档片段，识别其类型、结构和关键特征。
+Analyze the following document excerpt to identify its type, structure and key features.
+
+**文档片段 / Document Excerpt：**
+{{ document_preview }}
+
+请输出JSON格式的分析结果。/ Output in JSON format.

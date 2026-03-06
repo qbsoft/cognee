@@ -292,37 +292,70 @@ class TestDistillKnowledge:
 # LLM Call Tests
 # ============================================================
 
+def _make_streaming_response(text_content):
+    """Create a mock async streaming response for litellm.acompletion."""
+    class MockDelta:
+        def __init__(self, content):
+            self.content = content
+
+    class MockChoice:
+        def __init__(self, content):
+            self.delta = MockDelta(content)
+
+    class MockChunk:
+        def __init__(self, content):
+            self.choices = [MockChoice(content)]
+
+    class MockStreamResponse:
+        def __init__(self, text):
+            self._text = text
+            self._sent = False
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._sent:
+                self._sent = True
+                return MockChunk(self._text)
+            raise StopAsyncIteration
+
+    return MockStreamResponse(text_content)
+
+
 class TestCallLlmDistill:
-    """Tests for _call_llm_distill (uses response_model=str to avoid instructor overhead)."""
+    """Tests for _call_llm_distill (uses litellm streaming to avoid DashScope timeouts)."""
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_calls_llm_gateway_with_str_model(self, mock_render, mock_read, mock_gateway):
-        """Test that LLMGateway is called with response_model=str."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
-        mock_gateway.acreate_structured_output = AsyncMock(
-            return_value=_make_llm_json_response()
-        )
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_calls_litellm_streaming(self, mock_acompletion, mock_render, mock_config, mock_model):
+        """Test that litellm.acompletion is called with streaming mode."""
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
+
+        response_json = _make_llm_json_response()
+        mock_acompletion.return_value = _make_streaming_response(response_json)
 
         items = await _call_llm_distill("Test document text")
 
-        mock_gateway.acreate_structured_output.assert_called_once()
-        call_kwargs = mock_gateway.acreate_structured_output.call_args
-        # Must use response_model=str to avoid instructor JSON schema overhead
-        assert call_kwargs.kwargs["response_model"] == str
+        mock_acompletion.assert_called_once()
+        call_kwargs = mock_acompletion.call_args
+        # Must use stream=True for DashScope connection stability
+        assert call_kwargs.kwargs["stream"] is True
         assert len(items) == 2
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_filters_invalid_types(self, mock_render, mock_read, mock_gateway):
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_filters_invalid_types(self, mock_acompletion, mock_render, mock_config, mock_model):
         """Test that invalid distillation types are filtered out."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
 
         import json
         response_json = json.dumps([
@@ -330,20 +363,21 @@ class TestCallLlmDistill:
             {"type": "invalid_type", "text": "Should be filtered"},
             {"type": "enumeration", "text": "Valid enum"},
         ])
-        mock_gateway.acreate_structured_output = AsyncMock(return_value=response_json)
+        mock_acompletion.return_value = _make_streaming_response(response_json)
 
         items = await _call_llm_distill("Test")
         assert len(items) == 2
         assert all(i.type in {"qa", "enumeration"} for i in items)
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_filters_empty_text(self, mock_render, mock_read, mock_gateway):
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_filters_empty_text(self, mock_acompletion, mock_render, mock_config, mock_model):
         """Test that items with empty text are filtered out."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
 
         import json
         response_json = json.dumps([
@@ -351,48 +385,49 @@ class TestCallLlmDistill:
             {"type": "qa", "text": ""},
             {"type": "qa", "text": "   "},
         ])
-        mock_gateway.acreate_structured_output = AsyncMock(return_value=response_json)
+        mock_acompletion.return_value = _make_streaming_response(response_json)
 
         items = await _call_llm_distill("Test")
         assert len(items) == 1
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_handles_llm_exception(self, mock_render, mock_read, mock_gateway):
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_handles_llm_exception(self, mock_acompletion, mock_render, mock_config, mock_model):
         """Test graceful handling of LLM exceptions."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
-        mock_gateway.acreate_structured_output = AsyncMock(
-            side_effect=Exception("API Error")
-        )
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
+        mock_acompletion.side_effect = Exception("API Error")
 
         items = await _call_llm_distill("Test")
         assert items == []
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_handles_empty_string_response(self, mock_render, mock_read, mock_gateway):
-        """Test graceful handling when LLM returns empty string."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
-        mock_gateway.acreate_structured_output = AsyncMock(return_value="")
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_handles_empty_response(self, mock_acompletion, mock_render, mock_config, mock_model):
+        """Test graceful handling when LLM returns empty stream."""
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
+        mock_acompletion.return_value = _make_streaming_response("")
 
         items = await _call_llm_distill("Test")
         assert items == []
 
     @pytest.mark.asyncio
-    @patch("cognee.tasks.distillation.distill_knowledge.LLMGateway")
-    @patch("cognee.tasks.distillation.distill_knowledge.read_query_prompt")
+    @patch("cognee.tasks.distillation.distill_knowledge._get_distillation_model", return_value="test-model")
+    @patch("cognee.infrastructure.llm.config.get_llm_config")
     @patch("cognee.tasks.distillation.distill_knowledge.render_prompt")
-    async def test_handles_non_string_response(self, mock_render, mock_read, mock_gateway):
-        """Test graceful handling when LLM returns non-string."""
-        mock_read.return_value = "System prompt"
-        mock_render.return_value = "Rendered input"
-        mock_gateway.acreate_structured_output = AsyncMock(return_value=None)
+    @patch("litellm.acompletion", new_callable=AsyncMock)
+    async def test_handles_invalid_json_response(self, mock_acompletion, mock_render, mock_config, mock_model):
+        """Test graceful handling when LLM returns non-JSON."""
+        mock_render.return_value = "Rendered prompt"
+        mock_config.return_value = MagicMock(llm_api_key="key", llm_endpoint="url", llm_temperature=0.1)
+        mock_acompletion.return_value = _make_streaming_response("Not valid JSON")
 
         items = await _call_llm_distill("Test")
         assert items == []
@@ -517,11 +552,15 @@ class TestHierarchicalDistill:
     """Tests for hierarchical (map-reduce) distillation of large documents."""
 
     @pytest.mark.asyncio
+    @patch("cognee.tasks.distillation.distill_knowledge._call_llm_merge", new_callable=AsyncMock)
     @patch("cognee.tasks.distillation.distill_knowledge._call_llm_distill", new_callable=AsyncMock)
-    async def test_splits_large_documents(self, mock_llm):
+    async def test_splits_large_documents(self, mock_llm, mock_merge):
         """Test that large documents are split into batches."""
         mock_llm.return_value = [
             DistillationItem(type="qa", text="Batch result"),
+        ]
+        mock_merge.return_value = [
+            DistillationItem(type="qa", text="Merged result"),
         ]
 
         # Create chunks that exceed the limit
@@ -529,7 +568,7 @@ class TestHierarchicalDistill:
 
         items = await _hierarchical_distill(chunks, context_char_limit=12000)
 
-        # Should be called multiple times (batches + merge)
+        # Distill should be called multiple times (one per batch)
         assert mock_llm.call_count > 1
         assert len(items) > 0
 
@@ -565,9 +604,13 @@ class TestDistillationConfig:
         distillation = config.get("distillation", {})
 
         assert distillation.get("enabled") is True
-        assert distillation.get("context_char_limit") == 24000
+        assert distillation.get("context_char_limit") == 50000
         assert "enumeration" in distillation.get("types", [])
         assert "qa" in distillation.get("types", [])
+        # Verify profiling config exists
+        profiling = distillation.get("profiling", {})
+        assert profiling.get("enabled") is True
+        assert profiling.get("preview_chars") == 0  # 0 = use full document
 
     def test_config_has_all_types(self):
         """Test that all 5 distillation types are configured."""
@@ -590,12 +633,12 @@ class TestPipelineIntegration:
     @pytest.mark.asyncio
     @patch("cognee.api.v1.cognify.cognify.get_module_config")
     async def test_distillation_injected_when_enabled(self, mock_config):
-        """Test that distill_knowledge task is added when enabled."""
+        """Test that parallel_distill_and_summarize replaces summarize_text when enabled."""
         from cognee.api.v1.cognify.cognify import get_default_tasks
 
         def config_side_effect(module_name):
             if module_name == "distillation":
-                return {"distillation": {"enabled": True, "context_char_limit": 24000}}
+                return {"distillation": {"enabled": True, "context_char_limit": 50000}}
             if module_name == "chunking":
                 return {"chunking": {"chunk_size": 512, "chunk_overlap": 50}}
             if module_name == "graph_builder":
@@ -606,14 +649,11 @@ class TestPipelineIntegration:
 
         tasks = await get_default_tasks()
 
-        # Find distill_knowledge in tasks
+        # In parallel mode, distill_knowledge is wrapped in parallel_distill_and_summarize
         task_executables = [t.executable.__name__ for t in tasks]
-        assert "distill_knowledge" in task_executables
-
-        # Verify it's before summarize_text
-        distill_idx = task_executables.index("distill_knowledge")
-        summarize_idx = task_executables.index("summarize_text")
-        assert distill_idx < summarize_idx
+        assert "parallel_distill_and_summarize" in task_executables
+        # summarize_text should be replaced by parallel wrapper
+        assert "summarize_text" not in task_executables
 
     @pytest.mark.asyncio
     @patch("cognee.api.v1.cognify.cognify.get_module_config")
@@ -640,12 +680,12 @@ class TestPipelineIntegration:
     @pytest.mark.asyncio
     @patch("cognee.api.v1.cognify.cognify.get_module_config")
     async def test_distillation_batch_size(self, mock_config):
-        """Test that distillation task has batch_size=10000."""
+        """Test that parallel_distill_and_summarize task has batch_size=10000."""
         from cognee.api.v1.cognify.cognify import get_default_tasks
 
         def config_side_effect(module_name):
             if module_name == "distillation":
-                return {"distillation": {"enabled": True, "context_char_limit": 24000}}
+                return {"distillation": {"enabled": True, "context_char_limit": 50000}}
             if module_name == "chunking":
                 return {"chunking": {"chunk_size": 512, "chunk_overlap": 50}}
             if module_name == "graph_builder":
@@ -656,5 +696,5 @@ class TestPipelineIntegration:
 
         tasks = await get_default_tasks()
 
-        distill_task = next(t for t in tasks if t.executable.__name__ == "distill_knowledge")
-        assert distill_task.task_config["batch_size"] == 10000
+        parallel_task = next(t for t in tasks if t.executable.__name__ == "parallel_distill_and_summarize")
+        assert parallel_task.task_config["batch_size"] == 10000

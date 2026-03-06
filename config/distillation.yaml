@@ -19,3 +19,12 @@ distillation:
     - disambiguation   # Clarify easily confused concepts
     - negation         # Important information NOT in the document
     - qa               # Question-answer pairs for common queries
+
+  # Document profiling: auto-analyze document structure before distillation
+  # Adds ~3s per document (turbo model), generates targeted guidance for distillation
+  profiling:
+    enabled: true
+    # Preview chars for profiling (Stage 1). Higher = better profile quality.
+    # Profiling uses turbo model, so extra tokens are cheap (~$0.001 per 10k chars).
+    # Set to 0 for full document (recommended for documents <100k chars).
+    preview_chars: 0

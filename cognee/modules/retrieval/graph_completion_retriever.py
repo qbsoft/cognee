@@ -29,17 +29,31 @@ logger = get_logger("GraphCompletionRetriever")
 # Marker used to identify KD synthetic edges in the context list
 _KD_EDGE_MARKER = "__kd_ref__"
 
+# Marker used to identify DocumentChunk synthetic edges (direct vector search fallback)
+_DC_EDGE_MARKER = "__dc_ref__"
+
 # Marker used to identify neighbor-expanded edges for visualization only.
 # These edges enrich the graph display but are excluded from LLM answer context.
 _VIZ_ONLY_MARKER = "__viz_only__"
 
-# Internal/structural node types to exclude from LLM context and graph visualization.
-# These are infrastructure nodes (containers, timestamps) that add noise without value.
-_INTERNAL_NODE_TYPES = {
+# Node types to exclude from GRAPH VISUALIZATION (frontend display).
+# These are infrastructure nodes that clutter the graph without visual value.
+_VIZ_FILTER_NODE_TYPES = {
     "NodeSet", "nodeset",
     "Timestamp", "timestamp",
     "DocumentChunk", "documentchunk",
     "TextSummary", "textsummary",
+    "KnowledgeDistillation", "knowledgedistillation",
+}
+
+# Node types to exclude from LLM ANSWER CONTEXT (graph edges section only).
+# NOTE: DocumentChunk and TextSummary are intentionally NOT filtered here —
+# they contain valuable source text that serves as a safety net when KD
+# vectors miss certain facts. They are also searched separately via
+# _search_document_chunks() for explicit fallback.
+_INTERNAL_NODE_TYPES = {
+    "NodeSet", "nodeset",
+    "Timestamp", "timestamp",
 }
 
 
@@ -208,6 +222,18 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 len(kd_edges), query[:50],
             )
 
+        # Supplement with DocumentChunk direct vector search as safety net.
+        # When KD vectors miss certain facts (specific steps, party identities,
+        # phase lists), raw document chunks provide reliable fallback because
+        # they contain the complete source text.
+        dc_edges = await self._search_document_chunks(query)
+        if dc_edges:
+            triplets = list(triplets) + dc_edges
+            logger.info(
+                "Added %d DocumentChunk edges as fallback context for query: %s",
+                len(dc_edges), query[:50],
+            )
+
         # Expand with 1-hop neighbor edges for richer graph visualization.
         # These are marked _VIZ_ONLY and excluded from LLM answer context.
         viz_edges = await self._expand_neighbors_for_viz(triplets)
@@ -220,6 +246,95 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             return []
 
         return triplets
+
+    async def _search_document_chunks(self, query: str) -> List[Edge]:
+        """
+        Direct vector search on DocumentChunk_text collection as safety net.
+
+        When KnowledgeDistillation vectors don't cover certain facts (e.g.,
+        specific process steps, party identities, phase lists), the raw
+        document chunks serve as a reliable fallback because they contain
+        the complete source text.
+
+        Results are wrapped as synthetic Edge objects with _DC_EDGE_MARKER
+        so get_completion() can format them as a separate "原文参考段落" section.
+
+        MUST be called within the dataset database context (ContextVar set).
+        """
+        try:
+            vector_engine = get_vector_engine()
+            results = await vector_engine.search(
+                "DocumentChunk_text", query, limit=10,
+            )
+            if not results:
+                return []
+
+            # Re-rank by keyword overlap (same approach as KD search)
+            import re
+            cjk_runs = re.findall(r'[\u4e00-\u9fff]+', query)
+            query_keywords = set()
+            for run in cjk_runs:
+                bigrams = [run[j:j+2] for j in range(len(run) - 1)]
+                query_keywords.update(bigrams)
+            query_keywords |= set(re.findall(r'\d+', query))
+
+            candidates = []
+            for result in results:
+                # Use a generous threshold — DC is a fallback safety net
+                if result.score > 0.7:
+                    continue
+                text = result.payload.get("text", "")
+                if not text or len(text.strip()) < 30:
+                    continue
+                # Keyword boost
+                hits = sum(1 for kw in query_keywords if kw in text)
+                boosted_score = result.score - (hits * 0.1)
+                candidates.append((boosted_score, result.score, text))
+
+            candidates.sort(key=lambda x: x[0])
+            # Keep top 2 chunks — enough for fallback without overwhelming context.
+            # Using 2 instead of 3 reduces noise that can confuse the LLM when
+            # KD already has the answer (e.g., counts/totals not repeated in raw text).
+            candidates = candidates[:2]
+
+            edges = []
+            for i, (boosted, orig_score, text) in enumerate(candidates):
+                first_line = text.split('\n')[0].strip() if text else ""
+                display_name = first_line[:40] + "..." if len(first_line) > 40 else first_line
+                dc_node = Node(
+                    node_id=f"dc_{i}",
+                    attributes={
+                        "name": display_name or "文档段落",
+                        "_dc_marker": _DC_EDGE_MARKER,
+                        "text": text,
+                        "type": "DocumentChunk",
+                        "description": text,
+                        "vector_distance": orig_score,
+                    },
+                )
+                edge = Edge(
+                    node1=dc_node,
+                    node2=dc_node,
+                    attributes={
+                        "relationship_name": "source_document_chunk",
+                        "relationship_type": "source_document_chunk",
+                    },
+                    directed=False,
+                )
+                edges.append(edge)
+
+            if edges:
+                logger.info(
+                    "DocumentChunk search: %d results for query '%s'",
+                    len(edges), query[:50],
+                )
+            return edges
+        except CollectionNotFoundError:
+            logger.debug("DocumentChunk_text collection not found, skipping")
+            return []
+        except Exception as e:
+            logger.warning("DocumentChunk search failed: %s", e)
+            return []
 
     async def _search_knowledge_distillation(self, query: str) -> List[Edge]:
         """
@@ -236,7 +351,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         try:
             vector_engine = get_vector_engine()
             results = await vector_engine.search(
-                "KnowledgeDistillation_text", query, limit=20,
+                "KnowledgeDistillation_text", query, limit=30,
             )
             if not results:
                 return []
@@ -383,9 +498,9 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 # Check labels from Neo4j as well (labels may be in props)
                 src_labels = source_props.get("_labels", [])
                 tgt_labels = target_props.get("_labels", [])
-                if (src_type in _INTERNAL_NODE_TYPES or tgt_type in _INTERNAL_NODE_TYPES
-                        or any(lbl in _INTERNAL_NODE_TYPES for lbl in src_labels)
-                        or any(lbl in _INTERNAL_NODE_TYPES for lbl in tgt_labels)):
+                if (src_type in _VIZ_FILTER_NODE_TYPES or tgt_type in _VIZ_FILTER_NODE_TYPES
+                        or any(lbl in _VIZ_FILTER_NODE_TYPES for lbl in src_labels)
+                        or any(lbl in _VIZ_FILTER_NODE_TYPES for lbl in tgt_labels)):
                     continue
                 seen_pairs.add(pair_key)
 
@@ -465,39 +580,59 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         if triplets is None:
             triplets = await self.get_context(query)
 
-        # Separate KD edges and viz-only edges from graph edges for distinct formatting
+        # Separate KD edges, DC edges, and viz-only edges from graph edges
         graph_edges = []
         kd_texts = []
+        dc_texts = []
         for edge in triplets:
             # Skip viz-only edges — they are for graph display, not LLM context
             if (hasattr(edge, 'node1') and
                     edge.node1.attributes.get("_viz_only") == _VIZ_ONLY_MARKER):
                 continue
-            # Skip edges involving internal/structural node types (NodeSet, Timestamp, etc.)
+            # Skip edges involving internal/structural node types (NodeSet, Timestamp)
             if hasattr(edge, 'node1') and hasattr(edge, 'node2'):
                 n1_type = edge.node1.attributes.get("type", "")
                 n2_type = edge.node2.attributes.get("type", "")
                 if n1_type in _INTERNAL_NODE_TYPES or n2_type in _INTERNAL_NODE_TYPES:
                     continue
+            # Classify edge by marker
             if (hasattr(edge, 'node1') and
                     edge.node1.attributes.get("_kd_marker") == _KD_EDGE_MARKER):
                 kd_texts.append(edge.node1.attributes.get("text", ""))
+            elif (hasattr(edge, 'node1') and
+                    edge.node1.attributes.get("_dc_marker") == _DC_EDGE_MARKER):
+                dc_texts.append(edge.node1.attributes.get("text", ""))
             else:
                 graph_edges.append(edge)
 
         # Convert graph edges to text
         graph_context = await resolve_edges_to_text(graph_edges)
 
-        # Prepend KD content BEFORE graph context as high-priority reference.
-        # KD contains cross-chunk aggregated knowledge (enumerations, counts,
-        # Q&A pairs) which is often more precise than raw graph triplets.
+        # Build context with three tiers of information:
+        # 1. KD (highest priority: cross-chunk aggregated knowledge)
+        # 2. Graph edges (entity relationships from knowledge graph)
+        # 3. DocumentChunks (raw source text as safety net fallback)
+        context_text = ""
+
+        # Tier 1: KD content BEFORE graph context as high-priority reference.
         if kd_texts:
             kd_section = "【核心参考知识（准确性最高，与下方图谱信息冲突时以此为准）】\n"
             for i, text in enumerate(kd_texts, 1):
                 kd_section += f"{i}. {text}\n\n"
-            context_text = kd_section + "\n" + graph_context
-        else:
-            context_text = graph_context
+            context_text = kd_section + "\n"
+
+        # Tier 2: Graph edges
+        context_text += graph_context
+
+        # Tier 3: DocumentChunk raw text as fallback supplement.
+        # These are the original document paragraphs most relevant to the query.
+        # When KD or graph edges don't contain certain facts, this section
+        # ensures the LLM has access to the raw source text.
+        if dc_texts:
+            dc_section = "\n\n【原文参考段落（仅供补充参考，核心参考知识已涵盖的事实无需在此验证）】\n"
+            for i, text in enumerate(dc_texts, 1):
+                dc_section += f"--- 段落{i} ---\n{text}\n\n"
+            context_text += dc_section
 
         cache_config = CacheConfig()
         user = session_user.get()

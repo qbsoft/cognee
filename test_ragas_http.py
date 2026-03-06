@@ -1,12 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-直接调用 cognee Python SDK 的 RAGAS 评测脚本（无需 HTTP 服务器）
+通过 HTTP API 调用 cognee 后端的 RAGAS 评测脚本
+不需要 cognee SDK 依赖，只需要 httpx
 """
-import sys, io, json, time, asyncio, os
+import sys, io, json, time, os
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import httpx
+
+# ==============================================================
+# Configuration
+# ==============================================================
+COGNEE_API_BASE = os.getenv("COGNEE_API_BASE", "http://localhost:8000")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "sk-f9235546f8944cdca5529643bfa153f1")
+LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 # ==============================================================
 # Ground Truth
@@ -112,10 +121,6 @@ JUDGE_USER_PROMPT = """请对以下 RAG 系统的回答进行评测：
 {{"faithfulness": 0.0, "answer_relevancy": 0.0, "factual_correctness": 0.0, "reason": "简短说明"}}"""
 
 
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
-DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-
-
 def judge_with_llm(question: str, ground_truth: str, answer: str) -> dict:
     """使用 DashScope LLM API 对答案进行 RAGAS 风格评分"""
     prompt = JUDGE_USER_PROMPT.format(
@@ -125,9 +130,9 @@ def judge_with_llm(question: str, ground_truth: str, answer: str) -> dict:
         try:
             with httpx.Client(trust_env=False, transport=httpx.HTTPTransport(proxy=None), timeout=60) as c:
                 r = c.post(
-                    f"{DASHSCOPE_BASE_URL}/chat/completions",
+                    f"{LLM_ENDPOINT}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
+                        "Authorization": f"Bearer {LLM_API_KEY}",
                         "Content-Type": "application/json",
                     },
                     json={
@@ -149,14 +154,207 @@ def judge_with_llm(question: str, ground_truth: str, answer: str) -> dict:
                             return json.loads(text[start:end])
                     except Exception:
                         pass
-        except Exception:
+        except Exception as e:
+            print(f"  Judge attempt {attempt+1} failed: {e}")
             if attempt < 2:
                 time.sleep(2)
                 continue
     return None
 
 
-def rule_based_judge(question: str, ground_truth: str, answer: str) -> dict:
+def _get_auth_cookie() -> dict:
+    """Login and get auth cookie for API calls."""
+    try:
+        with httpx.Client(trust_env=False, timeout=30) as c:
+            r = c.post(
+                f"{COGNEE_API_BASE}/api/v1/auth/login",
+                data={
+                    "username": "default_user@example.com",
+                    "password": "default_password",
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            if r.status_code == 200:
+                cookies = dict(r.cookies)
+                if cookies:
+                    return cookies
+                # Fallback: extract token from response body
+                body = r.json()
+                token = body.get("access_token", "")
+                if token:
+                    return {"auth_token": token}
+    except Exception as e:
+        print(f"  Auth failed: {e}")
+    return {}
+
+
+# Module-level auth cookie (lazy init)
+_AUTH_COOKIES = None
+
+
+def _ensure_auth():
+    global _AUTH_COOKIES
+    if _AUTH_COOKIES is None:
+        _AUTH_COOKIES = _get_auth_cookie()
+    return _AUTH_COOKIES
+
+
+def do_search_http(query: str) -> str:
+    """通过 HTTP API 调用 cognee 搜索"""
+    cookies = _ensure_auth()
+    try:
+        with httpx.Client(trust_env=False, timeout=120, cookies=cookies) as c:
+            r = c.post(
+                f"{COGNEE_API_BASE}/api/v1/search",
+                json={
+                    "search_type": "GRAPH_COMPLETION",
+                    "query": query,
+                    "top_k": 10,
+                    "use_combined_context": True,
+                },
+            )
+            if r.status_code == 200:
+                data = r.json()
+                # The response could be various formats
+                if isinstance(data, str):
+                    return data
+                if isinstance(data, dict):
+                    # Check for result field
+                    if "result" in data:
+                        return str(data["result"])
+                    if "search_result" in data:
+                        return str(data["search_result"])
+                    return json.dumps(data, ensure_ascii=False)[:500]
+                if isinstance(data, list):
+                    if data:
+                        item = data[0]
+                        if isinstance(item, dict):
+                            sr = item.get("search_result", item.get("result", ""))
+                            if isinstance(sr, list) and sr:
+                                return str(sr[0])
+                            return str(sr)
+                        return str(item)
+                    return ""
+                return str(data)[:500]
+            else:
+                return f"HTTP_ERROR_{r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def run_evaluation():
+    print("=" * 70)
+    print("RAG 系统 RAGAS 风格评测 (HTTP API)")
+    print(f"后端地址: {COGNEE_API_BASE}")
+    print("维度: 忠实性 | 答案相关性 | 事实准确性")
+    print("=" * 70)
+
+    # Check backend availability
+    print("\n[检查后端可用性...]")
+    try:
+        with httpx.Client(trust_env=False, timeout=10) as c:
+            r = c.get(f"{COGNEE_API_BASE}/api/v1/health")
+            if r.status_code == 200:
+                print(f"后端: 可用")
+            else:
+                # Try root
+                r2 = c.get(f"{COGNEE_API_BASE}/")
+                print(f"后端: HTTP {r2.status_code}")
+    except Exception as e:
+        print(f"后端: 连接失败 ({e})")
+        print("请确认后端服务已启动在 http://localhost:8000")
+        return 0
+
+    # Check LLM judge
+    print("[检查 LLM Judge 可用性...]")
+    test_judge = judge_with_llm("测试", "测试答案", "系统回答")
+    use_llm_judge = test_judge is not None
+    print(f"LLM Judge: {'可用' if use_llm_judge else '不可用，使用规则评分'}\n")
+
+    scores = []
+    results_detail = []
+
+    for qid, query in QUERIES:
+        gt = GROUND_TRUTH.get(qid, "")
+        print(f"[{qid}] {query}")
+
+        t0 = time.time()
+        answer = do_search_http(query)
+        elapsed = time.time() - t0
+
+        print(f"  答案({elapsed:.1f}s): {answer[:120]}{'...' if len(answer) > 120 else ''}")
+
+        if use_llm_judge and answer and "ERROR" not in answer and "HTTP_ERROR" not in answer:
+            score = judge_with_llm(query, gt, answer)
+            if score is None:
+                score = _rule_based_judge(query, gt, answer)
+                score_method = "规则"
+            else:
+                score_method = "LLM"
+        else:
+            score = _rule_based_judge(query, gt, answer)
+            score_method = "规则"
+
+        f_score = score.get("faithfulness", 0)
+        r_score = score.get("answer_relevancy", 0)
+        c_score = score.get("factual_correctness", 0)
+        avg = (f_score + r_score + c_score) / 3
+
+        print(f"  [{score_method}评分] 忠实={f_score:.2f} 相关={r_score:.2f} 准确={c_score:.2f} → 综合={avg:.2f}")
+        print(f"  理由: {score.get('reason', '')}")
+        print()
+
+        scores.append(avg)
+        results_detail.append({
+            "id": qid, "query": query, "answer": answer,
+            "ground_truth": gt,
+            "faithfulness": f_score,
+            "answer_relevancy": r_score,
+            "factual_correctness": c_score,
+            "avg": avg, "method": score_method, "elapsed": elapsed,
+        })
+
+    overall = sum(scores) / len(scores) if scores else 0
+    f_avg = sum(r["faithfulness"] for r in results_detail) / len(results_detail)
+    rel_avg = sum(r["answer_relevancy"] for r in results_detail) / len(results_detail)
+    acc_avg = sum(r["factual_correctness"] for r in results_detail) / len(results_detail)
+    time_avg = sum(r["elapsed"] for r in results_detail) / len(results_detail)
+
+    print("=" * 70)
+    print(f"评测结果汇总 ({len(results_detail)} 题)")
+    print(f"  忠实性均值:     {f_avg:.3f}  ({f_avg*100:.1f}%)")
+    print(f"  答案相关性均值: {rel_avg:.3f}  ({rel_avg*100:.1f}%)")
+    print(f"  事实准确性均值: {acc_avg:.3f}  ({acc_avg*100:.1f}%)")
+    print(f"  综合精度:       {overall:.3f}  ({overall*100:.1f}%)")
+    print(f"  平均响应时间:   {time_avg:.1f}s")
+    print("=" * 70)
+
+    target = 0.93
+    if overall >= target:
+        print(f"\n✅ 精度 {overall*100:.1f}% >= {target*100:.0f}% 目标, Phase B 验证通过!")
+    else:
+        print(f"\n❌ 精度 {overall*100:.1f}% < {target*100:.0f}% 目标, 需要调查原因")
+
+    low_score = [r for r in results_detail if r["avg"] < 0.6]
+    if low_score:
+        print(f"\n需要改进的题目（综合分 < 0.6）：")
+        for r in sorted(low_score, key=lambda x: x["avg"]):
+            print(f"  [{r['id']}] 综合={r['avg']:.2f} | {r['query']}")
+
+    with open("evaluation_results_phase_b.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "overall": overall, "faithfulness": f_avg,
+            "answer_relevancy": rel_avg, "factual_correctness": acc_avg,
+            "avg_response_time": time_avg,
+            "details": results_detail,
+            "note": "Phase B dual-model (qwen-turbo extraction, qwen-plus answer)",
+        }, f, ensure_ascii=False, indent=2)
+    print("\n详细结果已保存到 evaluation_results_phase_b.json")
+
+    return overall
+
+
+def _rule_based_judge(question: str, ground_truth: str, answer: str) -> dict:
     import re
     answer_lower = answer.lower()
     gt_lower = ground_truth.lower()
@@ -193,127 +391,6 @@ def rule_based_judge(question: str, ground_truth: str, answer: str) -> dict:
             "reason": f"规则评分: 命中 {hits}/{len(all_gt_terms)}"}
 
 
-async def do_search(query: str) -> str:
-    """直接调用 cognee SDK 进行搜索"""
-    from cognee import search as cognee_search
-    from cognee.modules.search.types import SearchType
-    from cognee.modules.users.methods import get_default_user
-
-    user = await get_default_user()
-    result = await cognee_search(
-        query_text=query,
-        query_type=SearchType.GRAPH_COMPLETION,
-        user=user,
-        top_k=10,
-        use_combined_context=True,
-    )
-
-    # CombinedSearchResult has .result attribute
-    if hasattr(result, 'result'):
-        return str(result.result) if result.result else ""
-
-    # Fallback: list of SearchResult
-    if isinstance(result, list) and result:
-        item = result[0]
-        if isinstance(item, dict):
-            return str(item.get("search_result", [""])[:1])
-        if hasattr(item, 'search_result'):
-            sr = item.search_result
-            return sr[0] if sr else ""
-    return str(result)[:500]
-
-
-async def run_evaluation():
-    print("=" * 70)
-    print("RAG 系统 RAGAS 风格评测 (Direct SDK, KD as separate section)")
-    print("维度: 忠实性 | 答案相关性 | 事实准确性")
-    print("=" * 70)
-
-    # Check LLM judge
-    print("\n[检查 LLM Judge 可用性...]")
-    test_judge = judge_with_llm("测试", "测试答案", "系统回答")
-    use_llm_judge = test_judge is not None
-    print(f"LLM Judge: {'可用' if use_llm_judge else '不可用，使用规则评分'}\n")
-
-    scores = []
-    results_detail = []
-
-    for qid, query in QUERIES:
-        gt = GROUND_TRUTH.get(qid, "")
-        print(f"[{qid}] {query}")
-
-        try:
-            t0 = time.time()
-            answer = await do_search(query)
-            elapsed = time.time() - t0
-        except Exception as e:
-            answer = f"ERROR: {e}"
-            elapsed = 0
-            import traceback
-            traceback.print_exc()
-
-        print(f"  系统答案: {answer[:120]}{'...' if len(answer) > 120 else ''}")
-
-        if use_llm_judge and answer and "ERROR" not in answer:
-            score = judge_with_llm(query, gt, answer)
-            if score is None:
-                score = rule_based_judge(query, gt, answer)
-                score_method = "规则"
-            else:
-                score_method = "LLM"
-        else:
-            score = rule_based_judge(query, gt, answer)
-            score_method = "规则"
-
-        f_score = score.get("faithfulness", 0)
-        r_score = score.get("answer_relevancy", 0)
-        c_score = score.get("factual_correctness", 0)
-        avg = (f_score + r_score + c_score) / 3
-
-        print(f"  [{score_method}评分] 忠实={f_score:.2f} 相关={r_score:.2f} 准确={c_score:.2f} → 综合={avg:.2f}")
-        print(f"  理由: {score.get('reason', '')}")
-        print()
-
-        scores.append(avg)
-        results_detail.append({
-            "id": qid, "query": query, "answer": answer,
-            "ground_truth": gt,
-            "faithfulness": f_score,
-            "answer_relevancy": r_score,
-            "factual_correctness": c_score,
-            "avg": avg, "method": score_method,
-        })
-
-    overall = sum(scores) / len(scores) if scores else 0
-    f_avg = sum(r["faithfulness"] for r in results_detail) / len(results_detail)
-    rel_avg = sum(r["answer_relevancy"] for r in results_detail) / len(results_detail)
-    acc_avg = sum(r["factual_correctness"] for r in results_detail) / len(results_detail)
-
-    print("=" * 70)
-    print(f"评测结果汇总 ({len(results_detail)} 题)")
-    print(f"  忠实性均值:   {f_avg:.3f}  ({f_avg*100:.1f}%)")
-    print(f"  答案相关性均值: {rel_avg:.3f}  ({rel_avg*100:.1f}%)")
-    print(f"  事实准确性均值: {acc_avg:.3f}  ({acc_avg*100:.1f}%)")
-    print(f"  综合精度:     {overall:.3f}  ({overall*100:.1f}%)")
-    print("=" * 70)
-
-    low_score = [r for r in results_detail if r["avg"] < 0.6]
-    if low_score:
-        print(f"\n需要改进的题目（综合分 < 0.6）：")
-        for r in sorted(low_score, key=lambda x: x["avg"]):
-            print(f"  [{r['id']}] 综合={r['avg']:.2f} | {r['query']}")
-
-    with open("evaluation_results.json", "w", encoding="utf-8") as f:
-        json.dump({
-            "overall": overall, "faithfulness": f_avg,
-            "answer_relevancy": rel_avg, "factual_correctness": acc_avg,
-            "details": results_detail, "note": "KD as separate section (threshold 0.5)",
-        }, f, ensure_ascii=False, indent=2)
-    print("\n详细结果已保存到 evaluation_results.json")
-
-    return overall
-
-
 if __name__ == "__main__":
-    score = asyncio.run(run_evaluation())
+    score = run_evaluation()
     sys.exit(0 if score >= 0.75 else 1)

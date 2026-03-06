@@ -1,12 +1,22 @@
-# 双模型策略配置
-# extraction_model: 用于图谱提取、摘要、知识蒸馏等批处理任务（速度优先）
-# answer_model: 用于回答生成（质量优先）
+# 细粒度模型路由策略
+# graph_extraction_model: 图谱实体/关系提取（质量关键，影响检索精度）
+# extraction_model: 摘要/分类等简单提取任务（速度优先，每chunk调用）
+# distillation_model: 知识蒸馏（质量优先，每文档只调用一次）
+# answer_model: 回答生成（质量优先）
 # 留空 "" 表示使用 .env 中的默认 LLM_MODEL
 
 models:
-  # 提取模型: 速度快、成本低，适合结构化提取任务
-  # 推荐: dashscope/qwen-turbo-latest (DashScope) 或 gpt-4o-mini (OpenAI)
-  extraction_model: ""
+  # 图谱提取模型: 实体/关系提取是质量关键任务，直接影响检索精度
+  # 留空表示使用 .env 中的 LLM_MODEL (默认 qwen-plus)
+  graph_extraction_model: ""
+
+  # 通用提取模型: 摘要、分类等简单结构化任务，速度快成本低
+  # 推荐: openai/qwen-turbo-latest (DashScope) 或 gpt-4o-mini (OpenAI)
+  extraction_model: "openai/qwen-turbo-latest"
+
+  # 蒸馏模型: 知识蒸馏需要强推理能力，每文档只运行一次，成本可控
+  # 留空表示使用 .env 中的 LLM_MODEL (默认 qwen-plus)
+  distillation_model: ""
 
   # 回答模型: 推理能力强，适合回答生成
   # 留空表示使用 .env 中的 LLM_MODEL (默认行为)
@@ -14,7 +24,7 @@ models:
 
 # LLM 响应缓存配置
 cache:
-  # 是否启用缓存 (仅对 extraction 类任务生效)
+  # 是否启用缓存 (对 extraction 和 graph_extraction 任务生效)
   enabled: true
   # 缓存目录 (相对于项目根目录)
   cache_dir: ".cognee_cache/llm"
