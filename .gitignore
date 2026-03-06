@@ -213,3 +213,18 @@ docs/plans/
 
 # Spec documents (local only)
 specs/
+
+# Debug/diagnostic scripts and output (local only)
+debug_*.py
+debug_*.txt
+dump_*.py
+check_*.py
+diag_*.py
+kd_dump_*.txt
+kd_vectors_dump.txt
+ragas_run_*.txt
+evaluation_results_baseline.json
+eval_manual_scoring.py
+
+# Next.js build artifacts
+.next/
