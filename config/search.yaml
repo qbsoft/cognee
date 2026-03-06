@@ -16,3 +16,13 @@ search:
     model: bge-reranker-v2-m3
     top_k: 10
     fallback: llm
+
+  # Document routing: two-stage retrieval for large datasets
+  # Stage 1 selects top-K relevant documents via DocumentIndexCard vectors
+  # Stage 2 filters KD/DC search to only those documents
+  # Automatically skipped for small datasets (≤ min_doc_count)
+  document_routing:
+    enabled: true
+    min_doc_count: 20        # Skip routing for datasets with fewer documents
+    top_k: 10                # Number of documents to select in Stage 1
+    confidence_threshold: 0.3 # Fall back to full search if best score > this
