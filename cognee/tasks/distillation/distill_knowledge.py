@@ -390,6 +390,40 @@ def _build_profile_context(profile: DocumentProfile) -> dict:
     }
 
 
+def _build_index_card_summary(
+    profile: Optional[DocumentProfile],
+    doc_name: str,
+) -> str:
+    """Build a searchable summary string for DocumentIndexCard.
+
+    Combines profile fields into a single text that captures
+    the document's key characteristics for vector-based routing.
+    """
+    parts = [f"文档: {doc_name}"]
+
+    if profile is None:
+        return parts[0]
+
+    parts.append(f"类型: {profile.doc_type}")
+
+    if profile.key_categories:
+        parts.append(f"主题: {', '.join(profile.key_categories)}")
+
+    if profile.role_parties:
+        parts.append(f"参与方: {', '.join(profile.role_parties)}")
+
+    if profile.enumeration_targets:
+        parts.append(f"关键内容: {', '.join(profile.enumeration_targets)}")
+
+    if profile.example_questions:
+        parts.append(f"涵盖问题: {'; '.join(profile.example_questions[:5])}")
+
+    if profile.disambiguation_pairs:
+        parts.append(f"易混淆概念: {', '.join(profile.disambiguation_pairs)}")
+
+    return "\n".join(parts)
+
+
 async def _distill_single_document(
     doc_id: UUID,
     chunks: List[DocumentChunk],
@@ -446,10 +480,28 @@ async def _distill_single_document(
         )
         distillation_points.append(point)
 
+    # Generate DocumentIndexCard for document routing
+    from cognee.infrastructure.engine.models.DocumentIndexCard import DocumentIndexCard
+
+    card_summary = _build_index_card_summary(profile, doc_name=doc_name)
+    key_entities_text = ""
+    if profile and profile.role_parties:
+        key_entities_text = "; ".join(profile.role_parties)
+
+    index_card = DocumentIndexCard(
+        id=uuid5(doc_id, "DocumentIndexCard"),
+        summary=card_summary,
+        doc_name=doc_name or str(doc_id),
+        doc_type=profile.doc_type if profile else "general",
+        key_entities=key_entities_text,
+        source_document_id=doc_id,
+    )
+    distillation_points.append(index_card)
+
     logger.info(
         f"Document {doc_id} ({doc_name or 'unnamed'}): "
         f"generated {len(distillation_points)} distillation points "
-        f"from {len(chunks)} chunks"
+        f"(incl. 1 DocumentIndexCard) from {len(chunks)} chunks"
     )
     return distillation_points
 

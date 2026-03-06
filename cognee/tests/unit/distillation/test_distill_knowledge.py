@@ -32,10 +32,11 @@ from cognee.tasks.distillation.distill_knowledge import (
 # Helpers
 # ============================================================
 
-def _make_document(doc_id=None):
-    """Create a mock Document with an id."""
+def _make_document(doc_id=None, name="test_document"):
+    """Create a mock Document with an id and name."""
     doc = MagicMock()
     doc.id = doc_id or uuid4()
+    doc.name = name
     return doc
 
 
@@ -224,11 +225,13 @@ class TestDistillKnowledge:
 
         await distill_knowledge(chunks)
 
-        # add_data_points should be called with KnowledgeDistillation objects
+        # add_data_points should be called with KnowledgeDistillation + DocumentIndexCard objects
         mock_add.assert_called_once()
         stored_points = mock_add.call_args[0][0]
-        assert len(stored_points) == 2
-        assert all(isinstance(p, KnowledgeDistillation) for p in stored_points)
+        # 2 KnowledgeDistillation items + 1 DocumentIndexCard = 3 total
+        assert len(stored_points) == 3
+        kd_points = [p for p in stored_points if isinstance(p, KnowledgeDistillation)]
+        assert len(kd_points) == 2
 
     @pytest.mark.asyncio
     @patch("cognee.tasks.distillation.distill_knowledge.add_data_points", new_callable=AsyncMock)
@@ -284,8 +287,10 @@ class TestDistillKnowledge:
         await distill_knowledge(chunks)
 
         stored_points = mock_add.call_args[0][0]
+        # First point should be KnowledgeDistillation with deterministic ID
+        kd_points = [p for p in stored_points if isinstance(p, KnowledgeDistillation)]
         expected_id = uuid5(doc.id, "KnowledgeDistillation_0")
-        assert stored_points[0].id == expected_id
+        assert kd_points[0].id == expected_id
 
 
 # ============================================================
