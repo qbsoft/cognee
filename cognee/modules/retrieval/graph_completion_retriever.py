@@ -255,19 +255,31 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         except Exception as e:
             logger.debug(f"Document routing skipped: {e}")
 
-        triplets = await self.get_triplets(query)
-
-        if len(triplets) == 0:
-            logger.warning(
-                "Graph triplet search returned 0 results for query: '%s'. "
-                "Possible causes: (1) Entity/EntityType vector collections don't exist "
-                "(re-run cognify to rebuild), (2) similarity_threshold=%.2f is too strict, "
-                "(3) graph nodes exist but have no matching vector indexes.",
-                query, self.similarity_threshold,
+        # === Graph triplet search ===
+        # When document routing is active, SKIP graph triplet search entirely.
+        # Reason: Entity/EntityType vectors come from ALL documents (including noise),
+        # and there is no doc_name field on graph entities to filter by.
+        # KD vectors (searched below with doc_names filtering) are the primary
+        # knowledge source and contain comprehensive aggregated facts.
+        if routed_doc_names is not None:
+            triplets = []
+            logger.info(
+                "Graph triplet search SKIPPED (document routing active, %d docs selected). "
+                "Using KD-only retrieval for noise isolation.",
+                len(routed_doc_names),
             )
-            # Fallback: Try DocumentChunk with relaxed threshold
-            # ONLY when routing is NOT active (DC has no doc_name for filtering)
-            if routed_doc_names is None:
+        else:
+            triplets = await self.get_triplets(query)
+
+            if len(triplets) == 0:
+                logger.warning(
+                    "Graph triplet search returned 0 results for query: '%s'. "
+                    "Possible causes: (1) Entity/EntityType vector collections don't exist "
+                    "(re-run cognify to rebuild), (2) similarity_threshold=%.2f is too strict, "
+                    "(3) graph nodes exist but have no matching vector indexes.",
+                    query, self.similarity_threshold,
+                )
+                # Fallback: Try DocumentChunk with relaxed threshold
                 try:
                     triplets = await brute_force_triplet_search(
                         query,
