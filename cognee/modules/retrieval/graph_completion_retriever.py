@@ -235,11 +235,25 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
                 if _should_enable_routing(doc_count):
                     config = _get_routing_config()
-                    top_k = config.get("top_k", 10)
+                    top_k = config.get("top_k", 3)
                     confidence_threshold = config.get("confidence_threshold", 0.3)
+                    # Score gap: only include docs within this distance of best match
+                    score_gap = config.get("score_gap", 0.08)
 
                     if card_results and card_results[0].score < confidence_threshold:
-                        top_cards = card_results[:top_k]
+                        best_score = card_results[0].score
+                        # Apply score gap filter: only include documents
+                        # whose card score is close to the best match.
+                        # This prevents loosely-related noise docs from being
+                        # included when there's a clearly best-matching document.
+                        top_cards = []
+                        for card in card_results[:top_k]:
+                            if card.score <= best_score + score_gap:
+                                top_cards.append(card)
+                        # Always include at least the best match
+                        if not top_cards and card_results:
+                            top_cards = [card_results[0]]
+
                         routed_doc_names = set()
                         for card in top_cards:
                             name = card.payload.get("doc_name", "")
@@ -247,11 +261,19 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                                 routed_doc_names.add(name)
                         logger.info(
                             f"Document routing: {doc_count} docs, selected {len(routed_doc_names)} "
-                            f"(top score: {card_results[0].score:.3f}), "
+                            f"(top score: {best_score:.3f}, gap filter: {score_gap}), "
                             f"docs: {routed_doc_names}"
                         )
                     else:
-                        logger.info("Document routing: low confidence, using full search")
+                        # Low confidence — still activate routing mode to skip
+                        # graph triplets/DC, but with empty doc_names the soft
+                        # boost in KD search will have no effect (all KDs equal).
+                        routed_doc_names = set()
+                        logger.info(
+                            f"Document routing: low confidence "
+                            f"(best score: {card_results[0].score:.3f} > {confidence_threshold}), "
+                            f"graph/DC skipped but KD unfiltered"
+                        )
         except Exception as e:
             logger.debug(f"Document routing skipped: {e}")
 
@@ -436,24 +458,34 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Results are re-ranked by keyword overlap with the query so that KDs
         containing exact query terms are presented first.
 
-        When doc_names is provided (from document routing), results are filtered
-        to only include KD vectors from the specified documents. The search limit
-        is increased to 100 to ensure enough candidates survive filtering.
+        When doc_names is provided (from document routing), KD from those
+        documents receives a score BOOST (soft preference) rather than hard
+        filtering.  This ensures the correct document's KD is preferred while
+        still allowing KD from other documents to surface when routing selects
+        the wrong document (common for generic queries).
 
         MUST be called within the dataset database context (ContextVar set).
         """
         try:
             vector_engine = get_vector_engine()
-            search_limit = 100 if doc_names else 30
+            # When routing is active (doc_names is not None, even if empty set),
+            # search broadly (200) to ensure KD from the correct document is
+            # in the candidate pool.  Without routing (None), 30 is sufficient.
+            search_limit = 200 if doc_names is not None else 30
             results = await vector_engine.search(
                 "KnowledgeDistillation_text", query, limit=search_limit,
             )
             if not results:
                 return []
 
-            if doc_names:
-                results = _filter_results_by_doc_names(results, doc_names)
-                logger.info(f"KD filtered: {len(results)} results for {len(doc_names)} documents")
+            # NOTE: No hard filtering by doc_names.  Instead, we apply a soft
+            # score boost below so that KD from routed documents is preferred
+            # but KD from other documents can still surface.
+            if doc_names is not None:
+                logger.info(
+                    f"KD soft-boost mode: {len(results)} total results, "
+                    f"boosting {len(doc_names)} routed documents: {doc_names}"
+                )
 
             # Extract query keywords using 2-char CJK bigrams + numbers.
             # We use bigrams instead of full CJK runs because Chinese text
@@ -492,11 +524,24 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 # exact topic reliably outrank semantically-similar but
                 # topically-different results (e.g. "流程" vs "阶段").
                 boosted_score = result.score - (regular_hits * 0.1) - (focus_hits * 1.0)
+
+                # Soft document routing boost: KD from routed documents gets
+                # a significant score bonus.  This acts as a strong preference
+                # without hard-filtering, so KD from the correct document can
+                # still surface even if routing picked wrong documents.
+                if doc_names:
+                    is_routed_doc = any(f"[来源: {name}]" in text for name in doc_names)
+                    if is_routed_doc:
+                        boosted_score -= 0.3  # strong preference for routed docs
+
                 candidates.append((boosted_score, result.score, text))
 
-            # Sort by boosted score (lower is better) and keep top 5
+            # Sort by boosted score (lower is better) and keep top results.
+            # For large datasets (routing active), keep more candidates (8)
+            # to ensure diverse coverage across potential document matches.
             candidates.sort(key=lambda x: x[0])
-            candidates = candidates[:5]
+            max_candidates = 8 if doc_names is not None else 5
+            candidates = candidates[:max_candidates]
 
             edges = []
             for i, (boosted, orig_score, text) in enumerate(candidates):
