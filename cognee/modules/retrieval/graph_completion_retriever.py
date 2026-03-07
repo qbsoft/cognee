@@ -265,14 +265,16 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                             f"docs: {routed_doc_names}"
                         )
                     else:
-                        # Low confidence — still activate routing mode to skip
-                        # graph triplets/DC, but with empty doc_names the soft
-                        # boost in KD search will have no effect (all KDs equal).
-                        routed_doc_names = set()
+                        # Low confidence — no card matches well enough.
+                        # Fall back to full search (graph + DC + KD) without
+                        # any routing.  This is safer than forcing routing with
+                        # empty doc_names, which would skip graph/DC entirely
+                        # and lose valuable context.
+                        routed_doc_names = None
                         logger.info(
                             f"Document routing: low confidence "
                             f"(best score: {card_results[0].score:.3f} > {confidence_threshold}), "
-                            f"graph/DC skipped but KD unfiltered"
+                            f"falling back to full search (no routing)"
                         )
         except Exception as e:
             logger.debug(f"Document routing skipped: {e}")
@@ -532,7 +534,9 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 if doc_names:
                     is_routed_doc = any(f"[来源: {name}]" in text for name in doc_names)
                     if is_routed_doc:
-                        boosted_score -= 0.3  # strong preference for routed docs
+                        routing_cfg = _get_routing_config()
+                        kd_boost = routing_cfg.get("kd_routing_boost", 0.5)
+                        boosted_score -= kd_boost  # strong preference for routed docs
 
                 candidates.append((boosted_score, result.score, text))
 
