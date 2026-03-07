@@ -457,14 +457,18 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Creates synthetic Edge objects with a marker attribute so they can be
         identified and formatted separately in get_completion().
 
-        Results are re-ranked by keyword overlap with the query so that KDs
-        containing exact query terms are presented first.
+        Architecture (when routing active, i.e. multi-document datasets):
+          Vector search (200) → BGE Reranker (cross-encoder) → Document
+          consistency filter → top-8 KDs
 
-        When doc_names is provided (from document routing), KD from those
-        documents receives a score BOOST (soft preference) rather than hard
-        filtering.  This ensures the correct document's KD is preferred while
-        still allowing KD from other documents to surface when routing selects
-        the wrong document (common for generic queries).
+        The BGE cross-encoder reranker is the critical component for multi-
+        document scenarios.  Bi-encoder (vector) similarity treats "SOW的
+        项目目标" and "噪声文档的项目目标" as equally relevant because they
+        share the same semantics.  The cross-encoder jointly encodes
+        query+passage and can discriminate based on specific content, not
+        just topic similarity.
+
+        Falls back to keyword-based ranking when reranker is unavailable.
 
         MUST be called within the dataset database context (ContextVar set).
         """
@@ -480,172 +484,51 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             if not results:
                 return []
 
-            # NOTE: No hard filtering by doc_names.  Instead, we apply a soft
-            # score boost below so that KD from routed documents is preferred
-            # but KD from other documents can still surface.
-
-            # Read routing config once (used for boost value below).
-            routing_cfg = _get_routing_config() if doc_names is not None else {}
-            kd_boost = routing_cfg.get("kd_routing_boost", 0.5)
-
-            # === KD Voting ===
-            # When routing is active but IndexCards couldn't confidently select
-            # documents (doc_names is empty set), determine the most relevant
-            # document(s) by analyzing which documents appear most frequently
-            # in the top KD results.  This is more reliable than IndexCard
-            # routing for generic queries (e.g., "项目目标") because it uses
-            # actual content similarity rather than document-level summaries.
             import re
-            if doc_names is not None and not doc_names:
-                doc_vote = {}
-                # Examine top 30 results by vector distance
-                sorted_by_dist = sorted(results, key=lambda r: r.score)[:30]
-                for rank, result in enumerate(sorted_by_dist):
-                    text = result.payload.get("text", "")
-                    match = re.search(r'\[来源: (.+?)\]', text)
-                    if match:
-                        dname = match.group(1)
-                        # Weight by rank: top results get more influence
-                        weight = 1.0 / (rank + 1)
-                        doc_vote[dname] = doc_vote.get(dname, 0) + weight
+            routing_cfg = _get_routing_config() if doc_names is not None else {}
 
-                if doc_vote:
-                    sorted_docs = sorted(doc_vote.items(), key=lambda x: x[1], reverse=True)
-                    best_weight = sorted_docs[0][1]
-                    # Select documents with weight >= 50% of the best
-                    voted = {d for d, w in sorted_docs if w >= best_weight * 0.5}
-                    doc_names = voted
-                    logger.info(
-                        f"KD voting: selected {len(voted)} docs from "
-                        f"{len(doc_vote)} candidates: {voted} "
-                        f"(top-5 weights: {dict(sorted_docs[:5])})"
-                    )
+            # === Pre-filter: basic distance threshold ===
+            filtered = []
+            for r in results:
+                if r.score > 0.8:
+                    continue
+                text = r.payload.get("text", "")
+                if text:
+                    filtered.append((r.score, text))
+
+            if not filtered:
+                return []
+
+            # === Ranking strategy selection ===
+            # Multi-document (routing active): use BGE cross-encoder reranker
+            # Single/few documents (no routing): use keyword heuristics
+            candidates = []
+            reranker_used = False
 
             if doc_names is not None:
-                logger.info(
-                    f"KD soft-boost mode: {len(results)} total results, "
-                    f"boosting {len(doc_names)} routed documents: {doc_names}"
+                candidates, reranker_used = await self._rerank_kd_with_cross_encoder(
+                    query, filtered, routing_cfg,
                 )
 
-            # Extract query keywords using 2-char CJK bigrams + numbers.
-            # We use bigrams instead of full CJK runs because Chinese text
-            # has no spaces, so a full run would be the entire query string
-            # which would never match in KD text.
-            cjk_runs = re.findall(r'[\u4e00-\u9fff]+', query)
-            query_keywords = set()
-            focus_keywords = set()  # Last bigrams = topic focus of the query
-            for run in cjk_runs:
-                bigrams = [run[j:j+2] for j in range(len(run) - 1)]
-                query_keywords.update(bigrams)
-                # Last 2 bigrams of the last CJK run are the query focus
-                if run == cjk_runs[-1] and bigrams:
-                    focus_keywords.update(bigrams[-2:])
-            query_keywords |= set(re.findall(r'\d+', query))
+            if not reranker_used:
+                # Fallback: keyword-based ranking (original approach)
+                candidates = self._rank_kd_by_keywords(
+                    query, filtered, doc_names, routing_cfg,
+                )
 
-            # Build candidate list with keyword-boosted scores.
-            # Use a generous distance threshold (0.8) because the embedding
-            # API (DashScope) is non-deterministic — the same query can yield
-            # distances that fluctuate by ~0.15 between runs.  We rely on
-            # keyword re-ranking below to surface the best matches.
-            candidates = []
-            for result in results:
-                if result.score > 0.8:
-                    continue
-                text = result.payload.get("text", "")
-                if not text:
-                    continue
-                # Count keyword hits with stronger weight for focus keywords
-                regular_hits = sum(1 for kw in (query_keywords - focus_keywords) if kw in text)
-                focus_hits = sum(1 for kw in focus_keywords if kw in text)
-                # Lower score = better.
-                # Focus keywords (last bigrams of query = topic noun) get a
-                # very strong boost (-1.0 each) so that KDs matching the
-                # exact topic reliably outrank semantically-similar but
-                # topically-different results (e.g. "流程" vs "阶段").
-                boosted_score = result.score - (regular_hits * 0.1) - (focus_hits * 1.0)
-
-                # Soft document routing boost: KD from routed documents gets
-                # a significant score bonus.  This acts as a strong preference
-                # without hard-filtering, so KD from the correct document can
-                # still surface even if routing picked wrong documents.
-                if doc_names:
-                    is_routed_doc = any(f"[来源: {name}]" in text for name in doc_names)
-                    if is_routed_doc:
-                        boosted_score -= kd_boost  # strong preference for routed docs
-
-                candidates.append((boosted_score, result.score, text))
-
-            # Sort by boosted score (lower is better) and keep top results.
+            # Sort candidates (lower score = better for both paths)
             candidates.sort(key=lambda x: x[0])
             max_candidates = 8 if doc_names is not None else 5
 
             # === Document consistency re-ranking ===
-            # When routing is active, noise KDs from many different documents
-            # pollute the top results.  To counter this, we first select a
-            # larger pool (top-30), then re-rank by adding a "consistency
-            # bonus" for each KD whose source document appears multiple times
-            # in the pool.  Documents with multiple relevant KDs are more
-            # likely to be the correct target than documents with only a
-            # single lucky match.
+            # After ranking (whether by reranker or keywords), apply document
+            # consistency: prefer KDs whose source document appears multiple
+            # times in the result pool.  This provides an additional signal
+            # that the reranker alone may miss.
             if doc_names is not None and len(candidates) > max_candidates:
-                pool_size = min(30, len(candidates))
-                pool = candidates[:pool_size]
-
-                # Count document appearances in the pool
-                doc_counts = {}
-                for score, orig, text in pool:
-                    match = re.search(r'\[来源: (.+?)\]', text)
-                    dname = match.group(1) if match else ""
-                    if dname:
-                        doc_counts[dname] = doc_counts.get(dname, 0) + 1
-
-                if doc_counts:
-                    # Re-rank: bonus of 0.25 per sibling (minus self).
-                    # Higher bonus (was 0.15) to more aggressively favor
-                    # documents with consistent multi-KD coverage.
-                    consistency_bonus = routing_cfg.get("consistency_bonus", 0.25)
-                    reranked = []
-                    for score, orig, text in pool:
-                        match = re.search(r'\[来源: (.+?)\]', text)
-                        dname = match.group(1) if match else ""
-                        siblings = doc_counts.get(dname, 1) - 1
-                        adjusted = score - siblings * consistency_bonus
-                        reranked.append((adjusted, orig, text))
-                    reranked.sort(key=lambda x: x[0])
-                    candidates = reranked[:max_candidates]
-
-                    # Post-coherence filter: if final candidates span too
-                    # many documents, keep only the top-2 most represented
-                    # to prevent cross-document contamination in the answer.
-                    final_docs = {}
-                    for _, _, text in candidates:
-                        match = re.search(r'\[来源: (.+?)\]', text)
-                        d = match.group(1) if match else "?"
-                        final_docs[d] = final_docs.get(d, 0) + 1
-
-                    if len(final_docs) > 2:
-                        sorted_final = sorted(
-                            final_docs.items(), key=lambda x: x[1], reverse=True,
-                        )
-                        keep_docs = {d for d, _ in sorted_final[:2]}
-                        candidates = [
-                            (s, o, t) for s, o, t in candidates
-                            if any(f"[来源: {d}]" in t for d in keep_docs)
-                        ]
-                        logger.info(
-                            f"Post-coherence filter: kept {len(candidates)} "
-                            f"from {keep_docs}, dropped: "
-                            f"{set(final_docs) - keep_docs}"
-                        )
-
-                    logger.info(
-                        f"Document consistency re-ranking: pool={pool_size}, "
-                        f"bonus={consistency_bonus}, final docs: {final_docs}"
-                    )
-                else:
-                    candidates = candidates[:max_candidates]
-            else:
-                candidates = candidates[:max_candidates]
+                candidates = self._apply_document_consistency(
+                    candidates, max_candidates, routing_cfg,
+                )
 
             edges = []
             for i, (boosted, orig_score, text) in enumerate(candidates):
@@ -686,6 +569,167 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         except Exception as e:
             logger.warning("KnowledgeDistillation search failed: %s", e)
             return []
+
+    async def _rerank_kd_with_cross_encoder(
+        self, query: str, filtered: list, routing_cfg: dict,
+    ) -> tuple:
+        """
+        Apply BGE cross-encoder reranker to KD candidates.
+
+        The cross-encoder jointly encodes (query, passage) and produces a
+        relevance score that is FAR more discriminative than bi-encoder
+        cosine similarity.  This is the key to distinguishing "SOW的验收
+        标准" from "噪声文档的验收标准" in multi-document scenarios.
+
+        Returns (candidates, reranker_used) where candidates is a list of
+        (score, vector_distance, text) tuples with score = -rerank_score
+        (lower is better, consistent with rest of pipeline).
+        """
+        import re
+        try:
+            from cognee.modules.search.reranking.reranker import rerank
+
+            # Prepare reranker input — strip [来源: xxx] prefix so the
+            # cross-encoder focuses on content relevance, not metadata.
+            rerank_input = []
+            for vec_score, text in filtered:
+                clean_text = re.sub(r'^\[来源: .+?\]\s*', '', text)
+                rerank_input.append({
+                    "text": clean_text,
+                    "original_text": text,
+                    "vector_score": vec_score,
+                })
+
+            if not rerank_input:
+                return [], False
+
+            # Rerank with generous top_k to feed into consistency filter
+            reranked = await rerank(query, rerank_input, top_k=20)
+
+            # Convert to (score, vector_distance, text) format.
+            # Negate rerank_score so lower = better (pipeline convention).
+            candidates = []
+            for item in reranked:
+                score = -item["rerank_score"]
+                candidates.append((score, item["vector_score"], item["original_text"]))
+
+            if reranked:
+                logger.info(
+                    "BGE reranker: %d candidates → top-%d, "
+                    "best=%.3f, worst=%.3f",
+                    len(rerank_input), len(candidates),
+                    reranked[0]["rerank_score"],
+                    reranked[-1]["rerank_score"],
+                )
+
+            return candidates, True
+
+        except ImportError:
+            logger.info("BGE reranker not available (FlagEmbedding not installed), "
+                       "falling back to keyword ranking")
+            return [], False
+        except Exception as e:
+            logger.warning("BGE reranker failed: %s, falling back to keyword ranking", e)
+            return [], False
+
+    def _rank_kd_by_keywords(
+        self, query: str, filtered: list, doc_names, routing_cfg: dict,
+    ) -> list:
+        """
+        Fallback keyword-based ranking when BGE reranker is unavailable.
+
+        Uses CJK bigram matching and optional document routing boost.
+        """
+        import re
+        kd_boost = routing_cfg.get("kd_routing_boost", 0.5)
+
+        # Extract query keywords using 2-char CJK bigrams + numbers.
+        cjk_runs = re.findall(r'[\u4e00-\u9fff]+', query)
+        query_keywords = set()
+        focus_keywords = set()
+        for run in cjk_runs:
+            bigrams = [run[j:j+2] for j in range(len(run) - 1)]
+            query_keywords.update(bigrams)
+            if run == cjk_runs[-1] and bigrams:
+                focus_keywords.update(bigrams[-2:])
+        query_keywords |= set(re.findall(r'\d+', query))
+
+        candidates = []
+        for vec_score, text in filtered:
+            regular_hits = sum(1 for kw in (query_keywords - focus_keywords) if kw in text)
+            focus_hits = sum(1 for kw in focus_keywords if kw in text)
+            boosted_score = vec_score - (regular_hits * 0.1) - (focus_hits * 1.0)
+
+            if doc_names:
+                is_routed_doc = any(f"[来源: {name}]" in text for name in doc_names)
+                if is_routed_doc:
+                    boosted_score -= kd_boost
+
+            candidates.append((boosted_score, vec_score, text))
+
+        return candidates
+
+    def _apply_document_consistency(
+        self, candidates: list, max_candidates: int, routing_cfg: dict,
+    ) -> list:
+        """
+        Re-rank candidates by document consistency: prefer KDs whose source
+        document appears multiple times in the result pool.
+
+        Also applies post-coherence filter: if final candidates span >2
+        documents, keep only the top-2 most represented.
+        """
+        import re
+        pool_size = min(30, len(candidates))
+        pool = candidates[:pool_size]
+
+        doc_counts = {}
+        for score, orig, text in pool:
+            match = re.search(r'\[来源: (.+?)\]', text)
+            dname = match.group(1) if match else ""
+            if dname:
+                doc_counts[dname] = doc_counts.get(dname, 0) + 1
+
+        if not doc_counts:
+            return candidates[:max_candidates]
+
+        consistency_bonus = routing_cfg.get("consistency_bonus", 0.25)
+        reranked = []
+        for score, orig, text in pool:
+            match = re.search(r'\[来源: (.+?)\]', text)
+            dname = match.group(1) if match else ""
+            siblings = doc_counts.get(dname, 1) - 1
+            adjusted = score - siblings * consistency_bonus
+            reranked.append((adjusted, orig, text))
+        reranked.sort(key=lambda x: x[0])
+        result = reranked[:max_candidates]
+
+        # Post-coherence filter: keep only top-2 most represented documents
+        final_docs = {}
+        for _, _, text in result:
+            match = re.search(r'\[来源: (.+?)\]', text)
+            d = match.group(1) if match else "?"
+            final_docs[d] = final_docs.get(d, 0) + 1
+
+        if len(final_docs) > 2:
+            sorted_final = sorted(
+                final_docs.items(), key=lambda x: x[1], reverse=True,
+            )
+            keep_docs = {d for d, _ in sorted_final[:2]}
+            result = [
+                (s, o, t) for s, o, t in result
+                if any(f"[来源: {d}]" in t for d in keep_docs)
+            ]
+            logger.info(
+                "Post-coherence filter: kept %d from %s, dropped: %s",
+                len(result), keep_docs, set(final_docs) - keep_docs,
+            )
+
+        logger.info(
+            "Document consistency: pool=%d, bonus=%.2f, docs: %s",
+            pool_size, consistency_bonus, final_docs,
+        )
+        return result
 
     async def _expand_neighbors_for_viz(self, triplets: List[Edge]) -> List[Edge]:
         """
