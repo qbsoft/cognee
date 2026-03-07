@@ -219,33 +219,9 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             kd_edges = await self._search_knowledge_distillation(query)
             return kd_edges if kd_edges else []
 
-        triplets = await self.get_triplets(query)
-
-        if len(triplets) == 0:
-            logger.warning(
-                "Graph triplet search returned 0 results for query: '%s'. "
-                "Possible causes: (1) Entity/EntityType vector collections don't exist "
-                "(re-run cognify to rebuild), (2) similarity_threshold=%.2f is too strict, "
-                "(3) graph nodes exist but have no matching vector indexes.",
-                query, self.similarity_threshold,
-            )
-            # Fallback 1: Try DocumentChunk with relaxed threshold
-            try:
-                triplets = await brute_force_triplet_search(
-                    query,
-                    top_k=self.top_k,
-                    collections=["DocumentChunk_text"],
-                    similarity_threshold=0.95,
-                    min_quality_score=0.0,
-                    ensure_diversity=False,
-                )
-                if triplets:
-                    logger.info("DocumentChunk fallback found %d results", len(triplets))
-            except Exception as fallback_err:
-                logger.warning("DocumentChunk fallback failed: %s", fallback_err)
-                triplets = []
-
-        # Document routing for large datasets
+        # === Document routing (MUST run before any vector search) ===
+        # For large datasets (>20 docs), select only relevant documents
+        # to prevent noise pollution from unrelated documents.
         routed_doc_names = None
         try:
             from cognee.infrastructure.databases.vector import get_vector_engine as get_ve
@@ -271,12 +247,41 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                                 routed_doc_names.add(name)
                         logger.info(
                             f"Document routing: {doc_count} docs, selected {len(routed_doc_names)} "
-                            f"(top score: {card_results[0].score:.3f})"
+                            f"(top score: {card_results[0].score:.3f}), "
+                            f"docs: {routed_doc_names}"
                         )
                     else:
                         logger.info("Document routing: low confidence, using full search")
         except Exception as e:
             logger.debug(f"Document routing skipped: {e}")
+
+        triplets = await self.get_triplets(query)
+
+        if len(triplets) == 0:
+            logger.warning(
+                "Graph triplet search returned 0 results for query: '%s'. "
+                "Possible causes: (1) Entity/EntityType vector collections don't exist "
+                "(re-run cognify to rebuild), (2) similarity_threshold=%.2f is too strict, "
+                "(3) graph nodes exist but have no matching vector indexes.",
+                query, self.similarity_threshold,
+            )
+            # Fallback: Try DocumentChunk with relaxed threshold
+            # ONLY when routing is NOT active (DC has no doc_name for filtering)
+            if routed_doc_names is None:
+                try:
+                    triplets = await brute_force_triplet_search(
+                        query,
+                        top_k=self.top_k,
+                        collections=["DocumentChunk_text"],
+                        similarity_threshold=0.95,
+                        min_quality_score=0.0,
+                        ensure_diversity=False,
+                    )
+                    if triplets:
+                        logger.info("DocumentChunk fallback found %d results", len(triplets))
+                except Exception as fallback_err:
+                    logger.warning("DocumentChunk fallback failed: %s", fallback_err)
+                    triplets = []
 
         # Supplement with KnowledgeDistillation direct vector search.
         # KD nodes have no graph edges, so brute_force_triplet_search discards them.
@@ -291,15 +296,20 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             )
 
         # Supplement with DocumentChunk direct vector search as safety net.
-        # When KD vectors miss certain facts (specific steps, party identities,
-        # phase lists), raw document chunks provide reliable fallback because
-        # they contain the complete source text.
-        dc_edges = await self._search_document_chunks(query)
-        if dc_edges:
-            triplets = list(triplets) + dc_edges
+        # IMPORTANT: When document routing is active, skip DC search to avoid
+        # noise pollution — DC payload has no doc_name field for filtering.
+        if routed_doc_names is None:
+            dc_edges = await self._search_document_chunks(query)
+            if dc_edges:
+                triplets = list(triplets) + dc_edges
+                logger.info(
+                    "Added %d DocumentChunk edges as fallback context for query: %s",
+                    len(dc_edges), query[:50],
+                )
+        else:
             logger.info(
-                "Added %d DocumentChunk edges as fallback context for query: %s",
-                len(dc_edges), query[:50],
+                "DocumentChunk search skipped (document routing active, %d docs selected)",
+                len(routed_doc_names),
             )
 
         # Expand with 1-hop neighbor edges for richer graph visualization.
@@ -315,7 +325,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
         return triplets
 
-    async def _search_document_chunks(self, query: str) -> List[Edge]:
+    async def _search_document_chunks(self, query: str, doc_names=None) -> List[Edge]:
         """
         Direct vector search on DocumentChunk_text collection as safety net.
 
