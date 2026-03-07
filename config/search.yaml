@@ -28,3 +28,4 @@ search:
     confidence_threshold: 0.3 # Activate routing if best card score < this
     score_gap: 0.15          # Only include docs within this distance of best match
     kd_routing_boost: 0.5    # Score bonus for KD from routed documents (higher = stronger preference)
+    consistency_bonus: 0.25   # Bonus per sibling KD from same document in pool (higher = more doc-focused)

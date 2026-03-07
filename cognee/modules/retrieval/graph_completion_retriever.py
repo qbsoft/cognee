@@ -582,13 +582,13 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             # === Document consistency re-ranking ===
             # When routing is active, noise KDs from many different documents
             # pollute the top results.  To counter this, we first select a
-            # larger pool (top-20), then re-rank by adding a "consistency
+            # larger pool (top-30), then re-rank by adding a "consistency
             # bonus" for each KD whose source document appears multiple times
             # in the pool.  Documents with multiple relevant KDs are more
             # likely to be the correct target than documents with only a
             # single lucky match.
             if doc_names is not None and len(candidates) > max_candidates:
-                pool_size = min(20, len(candidates))
+                pool_size = min(30, len(candidates))
                 pool = candidates[:pool_size]
 
                 # Count document appearances in the pool
@@ -600,26 +600,47 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                         doc_counts[dname] = doc_counts.get(dname, 0) + 1
 
                 if doc_counts:
-                    # Re-rank: bonus of 0.15 per sibling (minus self)
+                    # Re-rank: bonus of 0.25 per sibling (minus self).
+                    # Higher bonus (was 0.15) to more aggressively favor
+                    # documents with consistent multi-KD coverage.
+                    consistency_bonus = routing_cfg.get("consistency_bonus", 0.25)
                     reranked = []
                     for score, orig, text in pool:
                         match = re.search(r'\[来源: (.+?)\]', text)
                         dname = match.group(1) if match else ""
                         siblings = doc_counts.get(dname, 1) - 1
-                        adjusted = score - siblings * 0.15
+                        adjusted = score - siblings * consistency_bonus
                         reranked.append((adjusted, orig, text))
                     reranked.sort(key=lambda x: x[0])
                     candidates = reranked[:max_candidates]
 
-                    # Log document distribution
+                    # Post-coherence filter: if final candidates span too
+                    # many documents, keep only the top-2 most represented
+                    # to prevent cross-document contamination in the answer.
                     final_docs = {}
                     for _, _, text in candidates:
                         match = re.search(r'\[来源: (.+?)\]', text)
                         d = match.group(1) if match else "?"
                         final_docs[d] = final_docs.get(d, 0) + 1
+
+                    if len(final_docs) > 2:
+                        sorted_final = sorted(
+                            final_docs.items(), key=lambda x: x[1], reverse=True,
+                        )
+                        keep_docs = {d for d, _ in sorted_final[:2]}
+                        candidates = [
+                            (s, o, t) for s, o, t in candidates
+                            if any(f"[来源: {d}]" in t for d in keep_docs)
+                        ]
+                        logger.info(
+                            f"Post-coherence filter: kept {len(candidates)} "
+                            f"from {keep_docs}, dropped: "
+                            f"{set(final_docs) - keep_docs}"
+                        )
+
                     logger.info(
                         f"Document consistency re-ranking: pool={pool_size}, "
-                        f"final docs: {final_docs}"
+                        f"bonus={consistency_bonus}, final docs: {final_docs}"
                     )
                 else:
                     candidates = candidates[:max_candidates]
