@@ -265,16 +265,16 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                             f"docs: {routed_doc_names}"
                         )
                     else:
-                        # Low confidence — no card matches well enough.
-                        # Fall back to full search (graph + DC + KD) without
-                        # any routing.  This is safer than forcing routing with
-                        # empty doc_names, which would skip graph/DC entirely
-                        # and lose valuable context.
-                        routed_doc_names = None
+                        # Low confidence — no IndexCard matches well.
+                        # Keep routing active (skip graph/DC which have no
+                        # doc provenance) but use empty doc_names.  The KD
+                        # search will apply KD voting to auto-detect the
+                        # most relevant document from content similarity.
+                        routed_doc_names = set()
                         logger.info(
                             f"Document routing: low confidence "
                             f"(best score: {card_results[0].score:.3f} > {confidence_threshold}), "
-                            f"falling back to full search (no routing)"
+                            f"graph/DC skipped, KD voting will determine documents"
                         )
         except Exception as e:
             logger.debug(f"Document routing skipped: {e}")
@@ -483,6 +483,44 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             # NOTE: No hard filtering by doc_names.  Instead, we apply a soft
             # score boost below so that KD from routed documents is preferred
             # but KD from other documents can still surface.
+
+            # Read routing config once (used for boost value below).
+            routing_cfg = _get_routing_config() if doc_names is not None else {}
+            kd_boost = routing_cfg.get("kd_routing_boost", 0.5)
+
+            # === KD Voting ===
+            # When routing is active but IndexCards couldn't confidently select
+            # documents (doc_names is empty set), determine the most relevant
+            # document(s) by analyzing which documents appear most frequently
+            # in the top KD results.  This is more reliable than IndexCard
+            # routing for generic queries (e.g., "项目目标") because it uses
+            # actual content similarity rather than document-level summaries.
+            import re
+            if doc_names is not None and not doc_names:
+                doc_vote = {}
+                # Examine top 30 results by vector distance
+                sorted_by_dist = sorted(results, key=lambda r: r.score)[:30]
+                for rank, result in enumerate(sorted_by_dist):
+                    text = result.payload.get("text", "")
+                    match = re.search(r'\[来源: (.+?)\]', text)
+                    if match:
+                        dname = match.group(1)
+                        # Weight by rank: top results get more influence
+                        weight = 1.0 / (rank + 1)
+                        doc_vote[dname] = doc_vote.get(dname, 0) + weight
+
+                if doc_vote:
+                    sorted_docs = sorted(doc_vote.items(), key=lambda x: x[1], reverse=True)
+                    best_weight = sorted_docs[0][1]
+                    # Select documents with weight >= 50% of the best
+                    voted = {d for d, w in sorted_docs if w >= best_weight * 0.5}
+                    doc_names = voted
+                    logger.info(
+                        f"KD voting: selected {len(voted)} docs from "
+                        f"{len(doc_vote)} candidates: {voted} "
+                        f"(top-5 weights: {dict(sorted_docs[:5])})"
+                    )
+
             if doc_names is not None:
                 logger.info(
                     f"KD soft-boost mode: {len(results)} total results, "
@@ -493,7 +531,6 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             # We use bigrams instead of full CJK runs because Chinese text
             # has no spaces, so a full run would be the entire query string
             # which would never match in KD text.
-            import re
             cjk_runs = re.findall(r'[\u4e00-\u9fff]+', query)
             query_keywords = set()
             focus_keywords = set()  # Last bigrams = topic focus of the query
@@ -534,8 +571,6 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 if doc_names:
                     is_routed_doc = any(f"[来源: {name}]" in text for name in doc_names)
                     if is_routed_doc:
-                        routing_cfg = _get_routing_config()
-                        kd_boost = routing_cfg.get("kd_routing_boost", 0.5)
                         boosted_score -= kd_boost  # strong preference for routed docs
 
                 candidates.append((boosted_score, result.score, text))
