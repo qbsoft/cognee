@@ -48,6 +48,9 @@ GROUND_TRUTH = {
     "Q25": "五个阶段：项目准备（目标定义）→蓝图设计（目标分解）→系统建设（目标实现）→上线验收（客户价值实现）→上线支持（投资收益最大化）",
 }
 
+# Document scope for SOW document (all 25 queries target this document)
+SOW_DOC_SCOPE = "PM_P0_06_工作说明书(SOW)"
+
 QUERIES = [
     ("Q01", "本项目的主要目标是什么？"),
     ("Q02", "本项目系统最多允许多少名用户访问？"),
@@ -199,19 +202,22 @@ def _ensure_auth():
     return _AUTH_COOKIES
 
 
-def do_search_http(query: str) -> str:
+def do_search_http(query: str, document_scope: str = None) -> str:
     """通过 HTTP API 调用 cognee 搜索"""
     cookies = _ensure_auth()
     try:
+        payload = {
+            "search_type": "GRAPH_COMPLETION",
+            "query": query,
+            "top_k": 10,
+            "use_combined_context": True,
+        }
+        if document_scope:
+            payload["document_scope"] = document_scope
         with httpx.Client(trust_env=False, timeout=120, cookies=cookies) as c:
             r = c.post(
                 f"{COGNEE_API_BASE}/api/v1/search",
-                json={
-                    "search_type": "GRAPH_COMPLETION",
-                    "query": query,
-                    "top_k": 10,
-                    "use_combined_context": True,
-                },
+                json=payload,
             )
             if r.status_code == 200:
                 data = r.json()
@@ -279,7 +285,7 @@ def run_evaluation():
         print(f"[{qid}] {query}")
 
         t0 = time.time()
-        answer = do_search_http(query)
+        answer = do_search_http(query, document_scope=SOW_DOC_SCOPE)
         elapsed = time.time() - t0
 
         print(f"  答案({elapsed:.1f}s): {answer[:120]}{'...' if len(answer) > 120 else ''}")

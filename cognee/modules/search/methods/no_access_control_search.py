@@ -24,6 +24,7 @@ async def no_access_control_search(
     last_k: Optional[int] = None,
     only_context: bool = False,
     session_id: Optional[str] = None,
+    document_scope: Optional[str] = None,
 ) -> Tuple[Any, Union[str, List[Edge]], List[Dataset]]:
     search_tools = await get_search_type_tools(
         query_type=query_type,
@@ -35,6 +36,7 @@ async def no_access_control_search(
         node_name=node_name,
         save_interaction=save_interaction,
         last_k=last_k,
+        document_scope=document_scope,
     )
     graph_engine = await get_graph_engine()
     is_empty = await graph_engine.is_empty()

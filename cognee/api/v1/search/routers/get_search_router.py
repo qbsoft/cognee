@@ -31,6 +31,12 @@ class SearchPayloadDTO(InDTO):
     top_k: Optional[int] = Field(default=10)
     only_context: bool = Field(default=False)
     use_combined_context: bool = Field(default=False)
+    document_scope: Optional[str] = Field(
+        default=None,
+        description="Scope search to a specific document by name or keyword. "
+        "When set, only KnowledgeDistillation entries from the matching document are used. "
+        "When not set and query is ambiguous, candidate documents may be returned for UI selection.",
+    )
 
 
 def get_search_router() -> APIRouter:
@@ -136,6 +142,7 @@ def get_search_router() -> APIRouter:
                 top_k=payload.top_k,
                 only_context=payload.only_context,
                 use_combined_context=payload.use_combined_context,
+                document_scope=payload.document_scope,
             )
 
             return jsonable_encoder(results)

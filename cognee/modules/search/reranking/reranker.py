@@ -28,7 +28,7 @@ def _get_reranker_model(model_name: str = "BAAI/bge-reranker-v2-m3"):
         try:
             from FlagEmbedding import FlagReranker
 
-            _reranker_model = FlagReranker(model_name, use_fp16=True)
+            _reranker_model = FlagReranker(model_name, use_fp16=False)
             logger.info(f"Reranker model loaded: {model_name}")
         except ImportError:
             raise ImportError(

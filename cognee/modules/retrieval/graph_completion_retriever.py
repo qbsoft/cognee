@@ -57,6 +57,134 @@ _INTERNAL_NODE_TYPES = {
 }
 
 
+def _extract_doc_name_from_card(card) -> str:
+    """Extract document name from an IndexCard's text field.
+
+    The text field format is: '文档: <name>\n类型: ...\n...'
+    Falls back to doc_name payload field if text parsing fails.
+    """
+    name = card.payload.get("doc_name", "")
+    if name:
+        return name
+    text = card.payload.get("text", "")
+    if text:
+        first_line = text.split("\n")[0]
+        # Parse "文档: <name>" format
+        if ":" in first_line:
+            name = first_line.split(":", 1)[1].strip()
+            return name
+    return ""
+
+
+async def _llm_select_documents(query: str, card_results: list) -> set:
+    """Use the STRONG LLM to select the most relevant document(s).
+
+    Sends full IndexCard text (not just names) to the answer model so it
+    can see document types, topics, parties, and key content.  Includes a
+    document-type hierarchy so the model can correctly map ambiguous
+    queries like "本项目的目标" to the primary project document (SOW).
+
+    Returns a set of document names, or empty set if selection fails.
+    """
+    if not card_results:
+        return set()
+
+    try:
+        import litellm
+        import re
+        from cognee.infrastructure.llm import get_llm_config
+
+        # Build document list with FULL IndexCard text (not just name+type)
+        doc_entries = []
+        for i, card in enumerate(card_results):
+            name = _extract_doc_name_from_card(card)
+            text = card.payload.get("text", "")
+            if name and text:
+                # Include full card text (truncated to ~300 chars)
+                card_summary = text.strip()[:300]
+                doc_entries.append(f"[{i+1}] {card_summary}")
+            elif name:
+                doc_entries.append(f"[{i+1}] {name}")
+
+        if not doc_entries:
+            return set()
+
+        docs_text = "\n".join(doc_entries)
+
+        prompt = (
+            f"用户查询: {query}\n\n"
+            f"以下是数据库中所有{len(doc_entries)}个文档的摘要:\n\n"
+            f"{docs_text}\n\n"
+            "请判断用户最可能在询问哪个文档的内容。\n\n"
+            "判断规则:\n"
+            "1. 如果查询提到了具体文档名称或独特关键词，直接匹配\n"
+            '2. 如果查询使用"本项目"/"本系统"/"该项目"等泛指，通常指'
+            "项目的核心定义文档。文档类型优先级:\n"
+            "   - SOW/工作说明书/技术规范书 -> 项目核心定义(最高优先)\n"
+            "   - 合同/协议书 -> 项目法律条款\n"
+            "   - 用户手册/操作指南 -> 系统操作步骤\n"
+            '   - 项目计划书 -> 子项目或关联项目(通常不是用户所指的"本项目")\n'
+            '3. 如果查询关于系统操作步骤(如"如何填写""操作流程")，'
+            "优先匹配用户手册/操作指南类文档\n"
+            "4. 如果查询关于合同条款、付款条件、验收标准等商务内容，"
+            "优先匹配SOW/合同类文档\n\n"
+            "只输出最相关文档的编号(如: 1)。如果有2个同样相关，"
+            "输出两个(如: 1,3)。只输出数字，不要解释。"
+        )
+
+        # Use the STRONG model (answer_model) for better routing accuracy.
+        # This costs ~5x more than turbo per call but dramatically improves
+        # document selection accuracy for ambiguous queries.
+        llm_config = get_llm_config()
+        model = llm_config.llm_model  # Default to the strong model
+        try:
+            from cognee.infrastructure.config.yaml_config import get_module_config
+            model_cfg = get_module_config("model_selection")
+            # Use answer_model (strong) if available, otherwise default
+            ans_model = model_cfg.get("answer_model", "")
+            if ans_model:
+                model = ans_model
+        except Exception:
+            pass
+
+        response = await litellm.acompletion(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一个智能文档路由器。根据用户查询和文档摘要，"
+                        "选出最可能包含答案的文档。只输出编号。"
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            api_key=llm_config.llm_api_key,
+            api_base=llm_config.llm_endpoint,
+            max_tokens=20,
+            temperature=0,
+        )
+
+        answer = response.choices[0].message.content.strip()
+        logger.debug("LLM doc selection answer: %s", answer)
+
+        # Parse response — extract numbers
+        numbers = re.findall(r'\d+', answer)
+        selected = set()
+        for num_str in numbers:
+            idx = int(num_str) - 1  # Convert to 0-based
+            if 0 <= idx < len(card_results):
+                name = _extract_doc_name_from_card(card_results[idx])
+                if name:
+                    selected.add(name)
+
+        return selected
+
+    except Exception as e:
+        logger.warning("LLM document selection failed: %s", e)
+        return set()
+
+
 def _get_routing_config() -> dict:
     """Read document routing configuration."""
     try:
@@ -115,6 +243,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         node_name: Optional[List[str]] = None,
         save_interaction: bool = False,
         similarity_threshold: float = 0.5,
+        document_scope: Optional[str] = None,
     ):
         """Initialize retriever with prompt paths and search parameters."""
         self.save_interaction = save_interaction
@@ -125,6 +254,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         self.node_type = node_type
         self.node_name = node_name
         self.similarity_threshold = similarity_threshold
+        self.document_scope = document_scope
 
     async def resolve_edges_to_text(self, retrieved_edges: list) -> str:
         """
@@ -216,12 +346,34 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         if is_empty:
             logger.warning("Search attempt on an empty knowledge graph")
             # Still try KD search even if graph is empty
-            kd_edges = await self._search_knowledge_distillation(query)
+            scope_names = {self.document_scope} if self.document_scope else None
+            kd_edges = await self._search_knowledge_distillation(
+                query, doc_names=scope_names,
+            )
             return kd_edges if kd_edges else []
 
-        # === Document routing (MUST run before any vector search) ===
-        # For large datasets (>20 docs), select only relevant documents
-        # to prevent noise pollution from unrelated documents.
+        # === Document scope: user-specified document filter ===
+        # When document_scope is set, skip auto-routing but KEEP graph
+        # triplets and DC chunks (they provide detailed process steps
+        # that KD doesn't cover, e.g., Q14 供应商功能, Q15 采购流程).
+        # KD is searched with a large limit (3000) to find the scoped
+        # document's entries even when noise docs dominate vector space.
+        # The scope instruction in get_completion() tells the LLM to
+        # prefer scoped KD content and ignore noise from other docs.
+        if self.document_scope:
+            logger.info(
+                "Document scope active: scoped-KD + graph/DC for '%s'",
+                self.document_scope,
+            )
+            # Fall through to graph/DC search below, but override KD
+            # filtering to use scope instead of routing.
+
+        # === Document routing for large datasets ===
+        # For large datasets (>20 docs), use the STRONG LLM to select
+        # relevant documents from IndexCard summaries with full text
+        # and document type hierarchy, then hard-filter KD search.
+        # Falls back to LLM KD-level reranking if routing returns empty.
+        large_dataset = False
         routed_doc_names = None
         try:
             from cognee.infrastructure.databases.vector import get_vector_engine as get_ve
@@ -234,63 +386,36 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 doc_count = len(card_results) if card_results else 0
 
                 if _should_enable_routing(doc_count):
-                    config = _get_routing_config()
-                    top_k = config.get("top_k", 3)
-                    confidence_threshold = config.get("confidence_threshold", 0.3)
-                    # Score gap: only include docs within this distance of best match
-                    score_gap = config.get("score_gap", 0.08)
-
-                    if card_results and card_results[0].score < confidence_threshold:
-                        best_score = card_results[0].score
-                        # Apply score gap filter: only include documents
-                        # whose card score is close to the best match.
-                        # This prevents loosely-related noise docs from being
-                        # included when there's a clearly best-matching document.
-                        top_cards = []
-                        for card in card_results[:top_k]:
-                            if card.score <= best_score + score_gap:
-                                top_cards.append(card)
-                        # Always include at least the best match
-                        if not top_cards and card_results:
-                            top_cards = [card_results[0]]
-
-                        routed_doc_names = set()
-                        for card in top_cards:
-                            name = card.payload.get("doc_name", "")
-                            if name:
-                                routed_doc_names.add(name)
+                    large_dataset = True
+                    # Use STRONG model for document selection
+                    routed_doc_names = await _llm_select_documents(
+                        query, card_results,
+                    )
+                    if routed_doc_names:
                         logger.info(
-                            f"Document routing: {doc_count} docs, selected {len(routed_doc_names)} "
-                            f"(top score: {best_score:.3f}, gap filter: {score_gap}), "
-                            f"docs: {routed_doc_names}"
+                            "LLM document routing (strong): %d docs, "
+                            "selected %d: %s",
+                            doc_count, len(routed_doc_names),
+                            routed_doc_names,
                         )
                     else:
-                        # Low confidence — no IndexCard matches well.
-                        # Keep routing active (skip graph/DC which have no
-                        # doc provenance) but use empty doc_names.  The KD
-                        # search will apply KD voting to auto-detect the
-                        # most relevant document from content similarity.
-                        routed_doc_names = set()
                         logger.info(
-                            f"Document routing: low confidence "
-                            f"(best score: {card_results[0].score:.3f} > {confidence_threshold}), "
-                            f"graph/DC skipped, KD voting will determine documents"
+                            "LLM document routing: no selection, "
+                            "falling back to KD-level reranking"
                         )
         except Exception as e:
-            logger.debug(f"Document routing skipped: {e}")
+            logger.debug(f"Document routing failed: {e}")
 
         # === Graph triplet search ===
-        # When document routing is active, SKIP graph triplet search entirely.
+        # When large dataset detected, SKIP graph triplet search entirely.
         # Reason: Entity/EntityType vectors come from ALL documents (including noise),
         # and there is no doc_name field on graph entities to filter by.
-        # KD vectors (searched below with doc_names filtering) are the primary
+        # KD vectors (searched below with doc consistency) are the primary
         # knowledge source and contain comprehensive aggregated facts.
-        if routed_doc_names is not None:
+        if large_dataset:
             triplets = []
             logger.info(
-                "Graph triplet search SKIPPED (document routing active, %d docs selected). "
-                "Using KD-only retrieval for noise isolation.",
-                len(routed_doc_names),
+                "Graph triplet search SKIPPED (large dataset, KD-voting mode)."
             )
         else:
             triplets = await self.get_triplets(query)
@@ -323,7 +448,20 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         # KD nodes have no graph edges, so brute_force_triplet_search discards them.
         # We search the vector index directly and create synthetic Edge objects
         # with a special marker so get_completion() can format them prominently.
-        kd_edges = await self._search_knowledge_distillation(query, doc_names=routed_doc_names)
+        # When document_scope is set, search with large limit (3000) to find
+        # the scoped document's KD entries even when noise docs dominate.
+        if self.document_scope:
+            kd_doc_filter = {self.document_scope}
+            kd_edges = await self._search_knowledge_distillation(
+                query,
+                doc_names=kd_doc_filter,
+                large_dataset=True,
+                scope_max_candidates=10,
+            )
+        else:
+            kd_edges = await self._search_knowledge_distillation(
+                query, doc_names=routed_doc_names, large_dataset=large_dataset,
+            )
         if kd_edges:
             triplets = list(triplets) + kd_edges
             logger.info(
@@ -332,9 +470,9 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             )
 
         # Supplement with DocumentChunk direct vector search as safety net.
-        # IMPORTANT: When document routing is active, skip DC search to avoid
+        # IMPORTANT: When large dataset detected, skip DC search to avoid
         # noise pollution — DC payload has no doc_name field for filtering.
-        if routed_doc_names is None:
+        if not large_dataset:
             dc_edges = await self._search_document_chunks(query)
             if dc_edges:
                 triplets = list(triplets) + dc_edges
@@ -344,8 +482,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 )
         else:
             logger.info(
-                "DocumentChunk search skipped (document routing active, %d docs selected)",
-                len(routed_doc_names),
+                "DocumentChunk search skipped (large dataset, KD-voting mode)"
             )
 
         # Expand with 1-hop neighbor edges for richer graph visualization.
@@ -450,34 +587,31 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             logger.warning("DocumentChunk search failed: %s", e)
             return []
 
-    async def _search_knowledge_distillation(self, query: str, doc_names=None) -> List[Edge]:
+    async def _search_knowledge_distillation(self, query: str, doc_names=None, large_dataset=False, scope_max_candidates=None) -> List[Edge]:
         """
         Direct vector search on KnowledgeDistillation_text collection.
 
         Creates synthetic Edge objects with a marker attribute so they can be
         identified and formatted separately in get_completion().
 
-        Architecture (when routing active, i.e. multi-document datasets):
-          Vector search (200) → BGE Reranker (cross-encoder) → Document
-          consistency filter → top-8 KDs
-
-        The BGE cross-encoder reranker is the critical component for multi-
-        document scenarios.  Bi-encoder (vector) similarity treats "SOW的
-        项目目标" and "噪声文档的项目目标" as equally relevant because they
-        share the same semantics.  The cross-encoder jointly encodes
-        query+passage and can discriminate based on specific content, not
-        just topic similarity.
-
-        Falls back to keyword-based ranking when reranker is unavailable.
+        Architecture for multi-document (large) datasets:
+          1. Strong LLM selects document(s) → doc_names
+          2. Hard-filter KDs to selected documents
+          3. BGE cross-encoder or keyword ranking on filtered pool
+          4. If doc routing returned empty: LLM KD-level reranking fallback
 
         MUST be called within the dataset database context (ContextVar set).
         """
         try:
             vector_engine = get_vector_engine()
-            # When routing is active (doc_names is not None, even if empty set),
-            # search broadly (200) to ensure KD from the correct document is
-            # in the candidate pool.  Without routing (None), 30 is sufficient.
-            search_limit = 200 if doc_names is not None else 30
+            # When document_scope is active (scope_max_candidates set), use a
+            # much larger search limit because the scoped document's KD vectors
+            # may rank far behind noise docs in raw vector similarity.
+            # E.g., "服务范围" is semantically closer to 50 noise docs' "服务范围"
+            # Q&A pairs than to the SOW's specific implementation details.
+            is_scoped = scope_max_candidates is not None
+            search_limit = 3000 if is_scoped else 30
+            distance_threshold = 2.0 if is_scoped else 0.8
             results = await vector_engine.search(
                 "KnowledgeDistillation_text", query, limit=search_limit,
             )
@@ -485,12 +619,11 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 return []
 
             import re
-            routing_cfg = _get_routing_config() if doc_names is not None else {}
+            routing_cfg = _get_routing_config() if large_dataset else {}
 
-            # === Pre-filter: basic distance threshold ===
             filtered = []
             for r in results:
-                if r.score > 0.8:
+                if r.score > distance_threshold:
                     continue
                 text = r.payload.get("text", "")
                 if text:
@@ -499,36 +632,51 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             if not filtered:
                 return []
 
-            # === Ranking strategy selection ===
-            # Multi-document (routing active): use BGE cross-encoder reranker
-            # Single/few documents (no routing): use keyword heuristics
-            candidates = []
-            reranker_used = False
-
-            if doc_names is not None:
-                candidates, reranker_used = await self._rerank_kd_with_cross_encoder(
-                    query, filtered, routing_cfg,
+            # === Document filter: when routing selected docs ===
+            # Supports both exact match ([来源: name]) and substring match
+            # (e.g. document_scope="正和热电" matches [来源: 正和热电采购系统SOW])
+            if doc_names:
+                before_count = len(filtered)
+                def _kd_matches_doc(text, names):
+                    for name in names:
+                        if f"[来源: {name}]" in text:
+                            return True
+                        # Substring match: check if scope keyword appears
+                        # in the source tag
+                        src_match = re.search(r'\[来源:\s*([^\]]+)\]', text)
+                        if src_match and name in src_match.group(1):
+                            return True
+                    return False
+                filtered = [
+                    (s, t) for s, t in filtered
+                    if _kd_matches_doc(t, doc_names)
+                ]
+                logger.info(
+                    "KD doc filter: %d → %d (docs: %s)",
+                    before_count, len(filtered), doc_names,
                 )
+                if not filtered and not is_scoped:
+                    # Hard filter yielded nothing — fall back to unfiltered
+                    # (but NOT when scoped — scope should return empty, not noise)
+                    logger.warning(
+                        "KD doc filter yielded 0 results, falling back to "
+                        "unfiltered pool"
+                    )
+                    filtered = [
+                        (r.score, r.payload.get("text", ""))
+                        for r in results
+                        if r.score <= 0.8 and r.payload.get("text", "")
+                    ]
 
-            if not reranker_used:
-                # Fallback: keyword-based ranking (original approach)
-                candidates = self._rank_kd_by_keywords(
-                    query, filtered, doc_names, routing_cfg,
-                )
+            # === Ranking: keyword-based scoring ===
+            candidates = self._rank_kd_by_keywords(
+                query, filtered, doc_names, routing_cfg,
+            )
 
-            # Sort candidates (lower score = better for both paths)
+            # Sort candidates (lower score = better for all paths)
             candidates.sort(key=lambda x: x[0])
-            max_candidates = 8 if doc_names is not None else 5
-
-            # === Document consistency re-ranking ===
-            # After ranking (whether by reranker or keywords), apply document
-            # consistency: prefer KDs whose source document appears multiple
-            # times in the result pool.  This provides an additional signal
-            # that the reranker alone may miss.
-            if doc_names is not None and len(candidates) > max_candidates:
-                candidates = self._apply_document_consistency(
-                    candidates, max_candidates, routing_cfg,
-                )
+            max_candidates = scope_max_candidates if scope_max_candidates else 5
+            candidates = candidates[:max_candidates]
 
             edges = []
             for i, (boosted, orig_score, text) in enumerate(candidates):
@@ -589,13 +737,14 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         try:
             from cognee.modules.search.reranking.reranker import rerank
 
-            # Prepare reranker input — strip [来源: xxx] prefix so the
-            # cross-encoder focuses on content relevance, not metadata.
+            # Keep [来源: xxx] prefix — it provides document-identity
+            # signal to the cross-encoder.  When the query mentions a
+            # document type (e.g. "SOW"), matching the prefix boosts
+            # the correct KDs significantly.
             rerank_input = []
             for vec_score, text in filtered:
-                clean_text = re.sub(r'^\[来源: .+?\]\s*', '', text)
                 rerank_input.append({
-                    "text": clean_text,
+                    "text": text,
                     "original_text": text,
                     "vector_score": vec_score,
                 })
@@ -631,6 +780,103 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         except Exception as e:
             logger.warning("BGE reranker failed: %s, falling back to keyword ranking", e)
             return [], False
+
+    async def _llm_rerank_kds(
+        self, query: str, candidates: list, top_k: int = 10,
+    ) -> list:
+        """
+        Use LLM to rerank KD candidates by content relevance.
+
+        Unlike document-level routing (which reads IndexCard summaries),
+        this reads ACTUAL KD content — making it far more accurate at
+        distinguishing content-similar passages from different documents.
+
+        Input: [(score, text), ...] — candidates from bi-encoder
+        Output: [(score, text), ...] — selected items in LLM order,
+                or empty list on failure (caller falls back to keyword ranking)
+        """
+        if not candidates:
+            return []
+
+        try:
+            import litellm
+            import re
+            from cognee.infrastructure.llm import get_llm_config
+
+            # Build numbered list of KD excerpts (keep [来源: xxx] prefix
+            # so LLM can see document grouping)
+            entries = []
+            for i, (score, text) in enumerate(candidates):
+                excerpt = text[:250].replace("\n", " ")
+                entries.append(f"[{i+1}] {excerpt}")
+
+            entries_text = "\n".join(entries)
+
+            prompt = (
+                f"用户查询: {query}\n\n"
+                f"以下是{len(entries)}个候选知识片段（来自不同文档）:\n\n"
+                f"{entries_text}\n\n"
+                f"请选出与查询最相关的{top_k}个片段编号。\n"
+                "选择标准:\n"
+                "1. 与查询内容直接匹配（精确相关优于主题相关）\n"
+                "2. 包含具体事实、数据、名称或流程步骤\n"
+                "3. 优先选择来自同一文档的片段（保证回答一致性）\n"
+                "4. 当多个文档有类似内容时，选择内容最详细具体的\n\n"
+                f"只输出{top_k}个编号，逗号分隔。不要解释。"
+            )
+
+            # Use extraction model (turbo) for speed
+            llm_config = get_llm_config()
+            try:
+                from cognee.infrastructure.config.yaml_config import get_module_config
+                model_cfg = get_module_config("model_selection")
+                model = model_cfg.get("extraction_model", llm_config.llm_model)
+            except Exception:
+                model = llm_config.llm_model
+
+            response = await litellm.acompletion(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是检索系统的重排序器。"
+                            "根据用户查询，从候选知识片段中选择最相关的。"
+                            "只输出编号，逗号分隔。"
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                api_key=llm_config.llm_api_key,
+                api_base=llm_config.llm_endpoint,
+                max_tokens=60,
+                temperature=0,
+            )
+
+            answer = response.choices[0].message.content.strip()
+            logger.debug("LLM KD reranking answer: %s", answer)
+
+            # Parse response — extract numbers
+            numbers = re.findall(r'\d+', answer)
+            selected = []
+            seen = set()
+            for num_str in numbers:
+                idx = int(num_str) - 1  # Convert to 0-based
+                if 0 <= idx < len(candidates) and idx not in seen:
+                    seen.add(idx)
+                    selected.append(candidates[idx])
+
+            if selected:
+                logger.info(
+                    "LLM KD reranking: %d → %d selected",
+                    len(candidates), len(selected),
+                )
+
+            return selected
+
+        except Exception as e:
+            logger.warning("LLM KD reranking failed: %s", e)
+            return []
 
     def _rank_kd_by_keywords(
         self, query: str, filtered: list, doc_names, routing_cfg: dict,
@@ -680,7 +926,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         documents, keep only the top-2 most represented.
         """
         import re
-        pool_size = min(30, len(candidates))
+        pool_size = min(50, len(candidates))
         pool = candidates[:pool_size]
 
         doc_counts = {}
@@ -906,12 +1152,24 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         # 3. DocumentChunks (raw source text as safety net fallback)
         context_text = ""
 
+        # When document_scope is set, add a scope instruction FIRST so
+        # the LLM prioritizes scoped KD and treats graph/DC as supplementary.
+        if self.document_scope:
+            context_text += (
+                f"【重要：本次查询限定在文档「{self.document_scope}」中。"
+                "请优先基于核心参考知识中标注来源为该文档的条目回答。"
+                "核心参考知识如果只提供了高层概要（如'是17个流程之一'），"
+                "则应从下方原文参考段落中提取该流程的具体步骤、功能细节来补充。"
+                "但不要采用核心参考知识中来自其他文档（如环保工程_合同、教育培训_合同等）"
+                "的信息来回答本项目的问题。】\n\n"
+            )
+
         # Tier 1: KD content BEFORE graph context as high-priority reference.
         if kd_texts:
             kd_section = "【核心参考知识（准确性最高，与下方图谱信息冲突时以此为准）】\n"
             for i, text in enumerate(kd_texts, 1):
                 kd_section += f"{i}. {text}\n\n"
-            context_text = kd_section + "\n"
+            context_text += kd_section + "\n"
 
         # Tier 2: Graph edges
         context_text += graph_context

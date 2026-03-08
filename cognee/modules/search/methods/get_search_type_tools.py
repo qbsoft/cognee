@@ -39,6 +39,7 @@ async def get_search_type_tools(
     node_name: Optional[List[str]] = None,
     save_interaction: bool = False,
     last_k: Optional[int] = None,
+    document_scope: Optional[str] = None,
 ) -> list:
     search_tasks: dict[SearchType, List[Callable]] = {
         SearchType.SUMMARIES: [
@@ -69,6 +70,7 @@ async def get_search_type_tools(
                 node_name=node_name,
                 save_interaction=save_interaction,
                 system_prompt=system_prompt,
+                document_scope=document_scope,
             ).get_completion,
             GraphCompletionRetriever(
                 system_prompt_path=system_prompt_path,
@@ -77,6 +79,7 @@ async def get_search_type_tools(
                 node_name=node_name,
                 save_interaction=save_interaction,
                 system_prompt=system_prompt,
+                document_scope=document_scope,
             ).get_context,
         ],
         SearchType.GRAPH_COMPLETION_COT: [
@@ -171,6 +174,7 @@ async def get_search_type_tools(
                     node_type=node_type,
                     node_name=node_name,
                     save_interaction=save_interaction,
+                    document_scope=document_scope,
                 ).get_completion,
                 lexical_retriever=JaccardChunksRetriever(top_k=top_k).get_completion,
                 weights={
