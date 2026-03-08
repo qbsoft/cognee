@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-05 (Phase 17 完成)
+**最后更新**: 2026-03-08 (Phase 19 完成)
 
 **正在进行的任务**: 无
 
@@ -166,6 +166,26 @@
   - 蒸馏未启用时管道行为完全不变
 - 设计文档: `docs/plans/2026-03-05-phase-b-dual-model-and-caching.md`
 
+### Phase 18: 大规模文档路由架构 (7 new files, 3 modified, 5 commits)
+- 设计两阶段文档路由架构：Stage 1 搜索 DocumentIndexCard 选择相关文档 → Stage 2 筛选 KD/DC 搜索结果
+- 小数据集自动旁路 (≤20 文档时跳过路由，行为与之前完全一致，保护精度)
+- 新建 `DocumentIndexCard` DataPoint 模型 (summary 向量索引 + doc_name/doc_type/key_entities)
+- 蒸馏时自动生成 DocumentIndexCard (基于 DocumentProfile 画像)
+- 检索器路由逻辑：`_should_enable_routing()` + `_filter_results_by_doc_names()` + `_get_routing_config()`
+- KD 文本前缀过滤：利用 `[来源: docname]` 前缀实现文档级筛选（无需修改 LanceDB schema）
+- search.yaml 路由配置 (enabled/min_doc_count/top_k/confidence_threshold)
+- 回归测试：12 个新测试全部通过 (test_document_index_card/test_index_card_generation/test_routing_regression/test_document_routing)
+- 单元测试验证：52/52 通过，零回归
+
+### Phase 19: Document Scope 文档定向搜索 (10 files, 1 commit)
+- 新增 `document_scope` API 参数：允许搜索时指定目标文档名称，精确定位到特定项目文档
+- API 链路贯通：SearchPayloadDTO → search() → no_access_control_search() → get_search_type_tools() → GraphCompletionRetriever
+- 混合检索策略：scoped KD (limit=3000, threshold=2.0) + unscoped graph/DC，解决噪声文档向量空间主导问题
+- KD 大范围搜索：52 文档场景中 SOW 的 KD 向量被 50 个噪声文档挤出 top-30，需 limit=3000 才能找到
+- 软化 scope 指令：允许 LLM 从 DC 原文段落中提取 KD 未覆盖的详细步骤（Q20 合同审批流程）
+- RAGAS 评测：52 文档 (1 SOW + 1 手册 + 50 噪声文档)，综合精度 **93.9%**
+- 分数进化：90.1% (Q13=0.00) → 81.8% (KD-only) → 89.9% (Q20=0.00) → **93.9%**（全部 >=0.85）
+
 ### Phase 11: 检索质量与图谱质量优化 (18 files, 1 commit)
 - A1: 修复 Temperature 参数传递到所有 6 个 LLM Adapter
 - A2: 优化中文分块策略 chunk_size=8191→512 + chunking.yaml 配置
@@ -180,10 +200,21 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1351 passed, 4 skipped (52 commits)
+**测试总数**: 1363 passed, 4 skipped (65 commits)
 
-**Git Commits (53个)**:
+**Git Commits (66个)**:
 ```
+bb6e0549 feat: add document_scope parameter for targeted document search
+c0b6b1f9 refactor: integrate BGE cross-encoder reranker into KD search pipeline
+cdff2ce4 feat: strengthen document consistency and add post-coherence filter
+b94b697f feat: add document consistency re-ranking and answer prompt coherence
+216f09e4 feat: add KD voting mechanism for document selection when routing uncertain
+36624092 fix: clean up routing interference from wrong-data testing
+66966290 feat: add document routing config and regression tests
+70bf3db3 feat: add two-stage document routing to retriever
+beebb465 feat: generate DocumentIndexCard during knowledge distillation
+c34db7f2 feat: add DocumentIndexCard model for document routing
+aa21640b chore: clean up debug/temp files and update .gitignore
 902bfaa2 feat(B3): add parallel distillation + summarization in cognify pipeline
 c0623db4 feat(B2): add content-hash based LLM response cache
 d3b0a358 feat(B1): route all extraction/distillation LLM calls to fast model
@@ -239,7 +270,14 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-16 已完成 ✅
+- 所有 Phase 0-19 已完成 ✅
+- **Document Scope 已实现** (Phase 19): `document_scope` API 参数支持定向搜索特定文档
+  - 使用方式: 搜索 API 的 `document_scope` 字段传入文档名称 (如 `"PM_P0_06_工作说明书(SOW)"`)
+  - 52 文档场景 RAGAS 精度: **93.9%**
+- **大规模文档路由已实现** (Phase 18): 两阶段路由架构支持 100-1000+ 文档数据集
+  - 路由配置: `config/search.yaml` → `document_routing` 节 (enabled/min_doc_count/top_k/confidence_threshold)
+  - 小数据集 (≤20 文档) 自动跳过路由，行为与之前完全一致
+  - 需要 E2E 验证: 上传 50+ 文档后运行 RAGAS 测试验证路由效果
 - **全自动知识蒸馏已验证通过** (Phase 15): 无需手工 lgl-facts，RAGAS >=93% 目标达成
   - 蒸馏配置: `config/distillation.yaml` (enabled: true/false)
   - 重新蒸馏工具: `redistill.py`（仅重跑蒸馏，无需完整 cognify）
@@ -261,3 +299,4 @@ deb7b119 feat: add graph validation (T2A05)
 - 开发者需要: 安装 FlagEmbedding 以启用 BGE-Reranker (`pip install FlagEmbedding`)
 - 可选进一步提升: 更精细GT校准可能突破96%
 - 可选: 评估替换 Embedding 模型为 BGE-M3 (对中文语义更好)
+- 可选: 跨文档融合 (多文档实体关联、知识图谱合并)
