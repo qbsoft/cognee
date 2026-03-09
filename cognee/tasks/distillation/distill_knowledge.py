@@ -558,6 +558,10 @@ async def _hierarchical_distill(
     if len(merge_text) <= context_char_limit:
         # Merge all at once
         merged_items = await _call_llm_merge(merge_text)
+        # Fallback to batch results if merge failed
+        if not merged_items:
+            logger.warning("Single merge failed, using unmerged batch results as fallback")
+            return batch_results
         return merged_items
     else:
         # Split merge text into groups and merge each group, then merge groups
@@ -588,7 +592,12 @@ async def _hierarchical_distill(
                 f"[{item.type.upper()}] {item.text}" for item in group
             )
             merged = await _call_llm_merge(group_text)
-            group_merged.extend(merged)
+            # Fallback to original group items if group merge failed
+            if not merged:
+                logger.warning("Group merge failed, using original group items as fallback")
+                group_merged.extend(group)
+            else:
+                group_merged.extend(merged)
 
         # If we ended up with multiple groups, try a final merge
         if len(merge_groups) > 1:
@@ -596,7 +605,12 @@ async def _hierarchical_distill(
                 f"[{item.type.upper()}] {item.text}" for item in group_merged
             )
             if len(final_text) <= context_char_limit:
-                return await _call_llm_merge(final_text)
+                final_merged = await _call_llm_merge(final_text)
+                # Fallback to group_merged if final merge failed
+                if not final_merged:
+                    logger.warning("Final merge failed, using group-merged results as fallback")
+                    return group_merged
+                return final_merged
 
         return group_merged
 

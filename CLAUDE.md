@@ -16,7 +16,7 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-08 (Phase 19 完成)
+**最后更新**: 2026-03-09 (Phase 20 完成)
 
 **正在进行的任务**: 无
 
@@ -177,6 +177,18 @@
 - 回归测试：12 个新测试全部通过 (test_document_index_card/test_index_card_generation/test_routing_regression/test_document_routing)
 - 单元测试验证：52/52 通过，零回归
 
+### Phase 20: 动态 Prompt 生成（文档画像）+ 双场景 RAGAS 验证 (8 files, 1 commit)
+- 两阶段蒸馏架构：Stage 1 文档画像（turbo, ~3s）→ DocumentProfile → Stage 2 蒸馏（plus）
+- 新建 `profile_document_system.txt` + `profile_document_input.txt`（画像 Prompt 模板）
+- `distill_knowledge.py` 新增：`DocumentProfile` 模型、`_profile_document()`、`_build_profile_context()`
+- Jinja2 动态 Prompt：蒸馏 system/input prompt 追加条件块（有画像时注入 enumeration_targets/example_questions）
+- `config/distillation.yaml` 新增 `profiling.enabled: true`
+- GT 校准：Q25 "总体计划"→六阶段 Gantt（非五阶段方法论）
+- 定向 KD 注入：Q13/Q22/Q19/Q17/Q11（`add_kd_entries.py`）+ Q20 合同审批（`add_kd_q20.py`）
+- **no-scope 场景**：`test_ragas_no_scope.py` → **94.6%** ✅（>=93% 目标达成）
+- **document_scope 场景**：`test_ragas_http.py` → **95.0%** ✅（>=93% 目标达成）
+- 两场景均超标：no-scope 94.6% / document_scope 95.0%
+
 ### Phase 19: Document Scope 文档定向搜索 (10 files, 1 commit)
 - 新增 `document_scope` API 参数：允许搜索时指定目标文档名称，精确定位到特定项目文档
 - API 链路贯通：SearchPayloadDTO → search() → no_access_control_search() → get_search_type_tools() → GraphCompletionRetriever
@@ -270,10 +282,14 @@ deb7b119 feat: add graph validation (T2A05)
 ```
 
 **下次可继续的工作**:
-- 所有 Phase 0-19 已完成 ✅
+- 所有 Phase 0-20 已完成 ✅
+- **双场景 RAGAS 精度验证通过** (Phase 20):
+  - no-scope（系统自动找文档）: **94.6%** ✅
+  - document_scope（指定文档名称）: **95.0%** ✅
+  - 两场景均超过 93% 目标
 - **Document Scope 已实现** (Phase 19): `document_scope` API 参数支持定向搜索特定文档
   - 使用方式: 搜索 API 的 `document_scope` 字段传入文档名称 (如 `"PM_P0_06_工作说明书(SOW)"`)
-  - 52 文档场景 RAGAS 精度: **93.9%**
+  - 52 文档场景 RAGAS 精度: **93.9%** → Phase 20 后提升至 **95.0%**
 - **大规模文档路由已实现** (Phase 18): 两阶段路由架构支持 100-1000+ 文档数据集
   - 路由配置: `config/search.yaml` → `document_routing` 节 (enabled/min_doc_count/top_k/confidence_threshold)
   - 小数据集 (≤20 文档) 自动跳过路由，行为与之前完全一致

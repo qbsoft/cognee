@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-通过 HTTP API 调用 cognee 后端的 RAGAS 评测脚本
+通过 HTTP API 调用 cognee 后端的 RAGAS 评测脚本（自由搜索版，无 document_scope）
+验证场景：52 文档数据集中，不指定目标文档，系统能否自动找到 SOW 相关内容并回答准确。
 不需要 cognee SDK 依赖，只需要 httpx
 """
 import sys, io, json, time, os
@@ -51,9 +52,6 @@ GROUND_TRUTH = {
     # "项目实施的总体计划" 语义上对应 (1) 实施计划表；(2) 是方法论，不是"总体计划"
     "Q25": "六个阶段：需求调研与分析阶段、系统设计阶段、开发与单元测试阶段、集成测试与UAT阶段、试运行阶段、最终验收阶段",
 }
-
-# Document scope for SOW document (all 25 queries target this document)
-SOW_DOC_SCOPE = "PM_P0_06_工作说明书(SOW)"
 
 QUERIES = [
     ("Q01", "本项目的主要目标是什么？"),
@@ -185,7 +183,6 @@ def _get_auth_cookie() -> dict:
                 cookies = dict(r.cookies)
                 if cookies:
                     return cookies
-                # Fallback: extract token from response body
                 body = r.json()
                 token = body.get("access_token", "")
                 if token:
@@ -195,7 +192,6 @@ def _get_auth_cookie() -> dict:
     return {}
 
 
-# Module-level auth cookie (lazy init)
 _AUTH_COOKIES = None
 
 
@@ -207,7 +203,7 @@ def _ensure_auth():
 
 
 def do_search_http(query: str, document_scope: str = None) -> str:
-    """通过 HTTP API 调用 cognee 搜索"""
+    """通过 HTTP API 调用 cognee 搜索（无 document_scope）"""
     cookies = _ensure_auth()
     try:
         payload = {
@@ -225,11 +221,9 @@ def do_search_http(query: str, document_scope: str = None) -> str:
             )
             if r.status_code == 200:
                 data = r.json()
-                # The response could be various formats
                 if isinstance(data, str):
                     return data
                 if isinstance(data, dict):
-                    # Check for result field
                     if "result" in data:
                         return str(data["result"])
                     if "search_result" in data:
@@ -252,22 +246,58 @@ def do_search_http(query: str, document_scope: str = None) -> str:
         return f"ERROR: {e}"
 
 
+def _rule_based_judge(question: str, ground_truth: str, answer: str) -> dict:
+    import re
+    answer_lower = answer.lower()
+    gt_lower = ground_truth.lower()
+
+    no_info_phrases = ["未找到相关信息", "没有找到", "无法回答", "暂无资料"]
+    gt_not_available_phrases = ["未明确", "未规定", "未给出", "未提及", "没有规定"]
+    answer_says_not_found = any(p in answer for p in no_info_phrases)
+    gt_says_not_available = any(p in gt_lower for p in gt_not_available_phrases)
+
+    if answer_says_not_found and gt_says_not_available:
+        return {"faithfulness": 1.0, "answer_relevancy": 1.0, "factual_correctness": 1.0,
+                "reason": "系统正确指出信息不在文档中"}
+    if answer_says_not_found:
+        return {"faithfulness": 0.5, "answer_relevancy": 0.0, "factual_correctness": 0.0,
+                "reason": "系统返回'未找到相关信息'"}
+
+    gt_numbers = re.findall(r'\d+(?:\.\d+)?', gt_lower)
+    gt_entities = re.findall(r'[\u4e00-\u9fff]{2,10}', gt_lower)
+    gt_entities = [e for e in gt_entities if len(e) >= 2][:10]
+    all_gt_terms = gt_numbers + gt_entities[:5]
+
+    if all_gt_terms:
+        hits = sum(1 for t in all_gt_terms if t in answer_lower)
+        factual = hits / len(all_gt_terms)
+    else:
+        hits = 0
+        factual = 0.5
+
+    relevancy = min(0.9, 0.5 + factual * 0.4) if len(answer.strip()) > 30 else (0.5 if len(answer.strip()) > 10 else 0.1)
+    faithfulness = 0.8 if len(answer.strip()) > 20 else 0.5
+
+    return {"faithfulness": round(faithfulness, 2), "answer_relevancy": round(relevancy, 2),
+            "factual_correctness": round(min(factual, 1.0), 2),
+            "reason": f"规则评分: 命中 {hits}/{len(all_gt_terms)}"}
+
+
 def run_evaluation():
     print("=" * 70)
-    print("RAG 系统 RAGAS 风格评测 (HTTP API)")
+    print("RAG 系统 RAGAS 评测 — 自由搜索（无 document_scope）")
     print(f"后端地址: {COGNEE_API_BASE}")
+    print("场景: 52 文档数据集，不指定目标文档，验证系统自动找到 SOW 内容")
     print("维度: 忠实性 | 答案相关性 | 事实准确性")
     print("=" * 70)
 
-    # Check backend availability
     print("\n[检查后端可用性...]")
     try:
         with httpx.Client(trust_env=False, timeout=10) as c:
             r = c.get(f"{COGNEE_API_BASE}/api/v1/health")
             if r.status_code == 200:
-                print(f"后端: 可用")
+                print("后端: 可用")
             else:
-                # Try root
                 r2 = c.get(f"{COGNEE_API_BASE}/")
                 print(f"后端: HTTP {r2.status_code}")
     except Exception as e:
@@ -275,7 +305,6 @@ def run_evaluation():
         print("请确认后端服务已启动在 http://localhost:8000")
         return 0
 
-    # Check LLM judge
     print("[检查 LLM Judge 可用性...]")
     test_judge = judge_with_llm("测试", "测试答案", "系统回答")
     use_llm_judge = test_judge is not None
@@ -289,7 +318,8 @@ def run_evaluation():
         print(f"[{qid}] {query}")
 
         t0 = time.time()
-        answer = do_search_http(query, document_scope=SOW_DOC_SCOPE)
+        # ★ 核心差异：不传 document_scope，完全自由搜索
+        answer = do_search_http(query, document_scope=None)
         elapsed = time.time() - t0
 
         print(f"  答案({elapsed:.1f}s): {answer[:120]}{'...' if len(answer) > 120 else ''}")
@@ -331,7 +361,7 @@ def run_evaluation():
     time_avg = sum(r["elapsed"] for r in results_detail) / len(results_detail)
 
     print("=" * 70)
-    print(f"评测结果汇总 ({len(results_detail)} 题)")
+    print(f"评测结果汇总 ({len(results_detail)} 题) — 自由搜索场景")
     print(f"  忠实性均值:     {f_avg:.3f}  ({f_avg*100:.1f}%)")
     print(f"  答案相关性均值: {rel_avg:.3f}  ({rel_avg*100:.1f}%)")
     print(f"  事实准确性均值: {acc_avg:.3f}  ({acc_avg*100:.1f}%)")
@@ -341,9 +371,9 @@ def run_evaluation():
 
     target = 0.93
     if overall >= target:
-        print(f"\n✅ 精度 {overall*100:.1f}% >= {target*100:.0f}% 目标, Phase B 验证通过!")
+        print(f"\n✅ 精度 {overall*100:.1f}% >= {target*100:.0f}% 目标，自由搜索场景验证通过!")
     else:
-        print(f"\n❌ 精度 {overall*100:.1f}% < {target*100:.0f}% 目标, 需要调查原因")
+        print(f"\n❌ 精度 {overall*100:.1f}% < {target*100:.0f}% 目标，需要调查原因")
 
     low_score = [r for r in results_detail if r["avg"] < 0.6]
     if low_score:
@@ -351,54 +381,19 @@ def run_evaluation():
         for r in sorted(low_score, key=lambda x: x["avg"]):
             print(f"  [{r['id']}] 综合={r['avg']:.2f} | {r['query']}")
 
-    with open("evaluation_results_phase_b.json", "w", encoding="utf-8") as f:
+    out_file = "evaluation_results_no_scope.json"
+    with open(out_file, "w", encoding="utf-8") as f:
         json.dump({
+            "scenario": "free_search_no_document_scope",
             "overall": overall, "faithfulness": f_avg,
             "answer_relevancy": rel_avg, "factual_correctness": acc_avg,
             "avg_response_time": time_avg,
             "details": results_detail,
-            "note": "Phase B dual-model (qwen-turbo extraction, qwen-plus answer)",
+            "note": "Free search without document_scope — 52 docs dataset",
         }, f, ensure_ascii=False, indent=2)
-    print("\n详细结果已保存到 evaluation_results_phase_b.json")
+    print(f"\n详细结果已保存到 {out_file}")
 
     return overall
-
-
-def _rule_based_judge(question: str, ground_truth: str, answer: str) -> dict:
-    import re
-    answer_lower = answer.lower()
-    gt_lower = ground_truth.lower()
-
-    no_info_phrases = ["未找到相关信息", "没有找到", "无法回答", "暂无资料"]
-    gt_not_available_phrases = ["未明确", "未规定", "未给出", "未提及", "没有规定"]
-    answer_says_not_found = any(p in answer for p in no_info_phrases)
-    gt_says_not_available = any(p in gt_lower for p in gt_not_available_phrases)
-
-    if answer_says_not_found and gt_says_not_available:
-        return {"faithfulness": 1.0, "answer_relevancy": 1.0, "factual_correctness": 1.0,
-                "reason": "系统正确指出信息不在文档中"}
-    if answer_says_not_found:
-        return {"faithfulness": 0.5, "answer_relevancy": 0.0, "factual_correctness": 0.0,
-                "reason": "系统返回'未找到相关信息'"}
-
-    gt_numbers = re.findall(r'\d+(?:\.\d+)?', gt_lower)
-    gt_entities = re.findall(r'[\u4e00-\u9fff]{2,10}', gt_lower)
-    gt_entities = [e for e in gt_entities if len(e) >= 2][:10]
-    all_gt_terms = gt_numbers + gt_entities[:5]
-
-    if all_gt_terms:
-        hits = sum(1 for t in all_gt_terms if t in answer_lower)
-        factual = hits / len(all_gt_terms)
-    else:
-        hits = 0
-        factual = 0.5
-
-    relevancy = min(0.9, 0.5 + factual * 0.4) if len(answer.strip()) > 30 else (0.5 if len(answer.strip()) > 10 else 0.1)
-    faithfulness = 0.8 if len(answer.strip()) > 20 else 0.5
-
-    return {"faithfulness": round(faithfulness, 2), "answer_relevancy": round(relevancy, 2),
-            "factual_correctness": round(min(factual, 1.0), 2),
-            "reason": f"规则评分: 命中 {hits}/{len(all_gt_terms)}"}
 
 
 if __name__ == "__main__":
