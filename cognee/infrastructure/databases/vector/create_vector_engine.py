@@ -96,6 +96,23 @@ def create_vector_engine(
             embedding_engine=embedding_engine,
         )
 
+    elif vector_db_provider.lower() == "qdrant":
+        try:
+            from qdrant_client import AsyncQdrantClient  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "qdrant-client is not installed. "
+                "Please install it with 'pip install qdrant-client'"
+            )
+
+        from .qdrant.QdrantAdapter import QdrantAdapter
+
+        return QdrantAdapter(
+            url=vector_db_url,
+            api_key=vector_db_key,
+            embedding_engine=embedding_engine,
+        )
+
     elif vector_db_provider.lower() == "neptune_analytics":
         try:
             from langchain_aws import NeptuneAnalyticsGraph
@@ -136,5 +153,5 @@ def create_vector_engine(
     else:
         raise EnvironmentError(
             f"Unsupported graph database provider: {vector_db_provider}. "
-            f"Supported providers are: {', '.join(list(supported_databases.keys()) + ['LanceDB', 'PGVector', 'neptune_analytics', 'ChromaDB'])}"
+            f"Supported providers are: {', '.join(list(supported_databases.keys()) + ['LanceDB', 'PGVector', 'Qdrant', 'neptune_analytics', 'ChromaDB'])}"
         )

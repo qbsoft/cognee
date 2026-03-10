@@ -40,9 +40,12 @@ class VectorConfig(BaseSettings):
                 self.vector_db_url,
             )
         elif not self.vector_db_url:
-            # Default path
+            # Default path — provider-aware
             databases_directory_path = os.path.join(base_config.system_root_directory, "databases")
-            self.vector_db_url = os.path.join(databases_directory_path, "cognee.lancedb")
+            if self.vector_db_provider == "qdrant":
+                self.vector_db_url = os.path.join(databases_directory_path, "cognee.qdrant")
+            else:
+                self.vector_db_url = os.path.join(databases_directory_path, "cognee.lancedb")
 
         return self
 
