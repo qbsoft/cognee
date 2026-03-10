@@ -20,6 +20,11 @@ distillation:
     - negation         # Important information NOT in the document
     - qa               # Question-answer pairs for common queries
 
+  # 已蒸馏文档跳过: 如果某文档的 KnowledgeDistillation 条目已存在于向量库，跳过重新蒸馏
+  # 场景: 对同一批文档多次运行 cognify（如调参、修复后重跑），避免重复的 LLM 调用
+  # force_redistill=true: 忽略此配置，强制重新蒸馏所有文档（如主动修改了蒸馏 Prompt 后）
+  skip_if_distilled: true
+
   # Document profiling: auto-analyze document structure before distillation
   # Adds ~3s per document (turbo model), generates targeted guidance for distillation
   profiling:

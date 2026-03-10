@@ -34,7 +34,8 @@ async def extract_edge_triplets(
             "extract_graph_edge_triplets_prompt_system.txt", base_directory=base_directory
         )
         extracted_graph = await LLMGateway.acreate_structured_output(
-            text_input=text_input, system_prompt=system_prompt, response_model=KnowledgeGraph
+            text_input=text_input, system_prompt=system_prompt, response_model=KnowledgeGraph,
+            task_type="graph_extraction",
         )
 
         for node in extracted_graph.nodes:

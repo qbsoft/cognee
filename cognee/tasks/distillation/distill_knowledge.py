@@ -92,6 +92,57 @@ def _get_profiling_preview_chars() -> int:
         return 3000
 
 
+def _is_skip_if_distilled_enabled() -> bool:
+    """Check if skip_if_distilled is enabled in distillation.yaml."""
+    try:
+        from cognee.infrastructure.config.yaml_config import get_module_config
+        config = get_module_config("distillation")
+        return bool(config.get("distillation", {}).get("skip_if_distilled", True))
+    except Exception:
+        return True
+
+
+def _get_distillation_concurrency() -> int:
+    """从 concurrency.yaml 读取蒸馏并发数，默认 8。"""
+    try:
+        import os, yaml
+        config_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "config", "concurrency.yaml"
+        )
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        return int(cfg.get("concurrency", {}).get("distillation_concurrency", 8))
+    except Exception:
+        return 8
+
+
+async def _kd_exists_for_doc(doc_id: UUID) -> bool:
+    """Check if KnowledgeDistillation entries already exist for this document.
+
+    Uses the deterministic UUID pattern: uuid5(doc_id, "KnowledgeDistillation_0")
+    is always the first KD entry for any document. If it exists, the full
+    distillation has been done.
+
+    Returns True if KD entries exist (should skip), False if not found (should distill).
+    """
+    try:
+        from cognee.infrastructure.databases.vector import get_vector_engine
+        vector_engine = get_vector_engine()
+
+        # Collection naming convention: {TypeName}_{field_name}
+        # KnowledgeDistillation has index_fields=["text"], so table = "KnowledgeDistillation_text"
+        kd_collection = "KnowledgeDistillation_text"
+        if not await vector_engine.has_collection(kd_collection):
+            return False
+
+        first_kd_id = str(uuid5(doc_id, "KnowledgeDistillation_0"))
+        results = await vector_engine.retrieve(kd_collection, [first_kd_id])
+        return len(results) > 0
+    except Exception as e:
+        logger.debug(f"KD existence check failed for {doc_id}: {e}")
+        return False
+
+
 class DistillationItem(BaseModel):
     """Single distillation item returned by the LLM."""
     type: str = Field(description="Distillation type: enumeration, aggregation, disambiguation, negation, or qa")
@@ -163,6 +214,30 @@ async def distill_knowledge(
         f"from {len(data_chunks)} chunk(s)"
     )
 
+    # --- Skip already-distilled documents ---
+    skip_if_distilled = _is_skip_if_distilled_enabled()
+    if skip_if_distilled:
+        doc_ids = list(doc_chunks_map.keys())
+        existence_checks = await asyncio.gather(
+            *[_kd_exists_for_doc(doc_id) for doc_id in doc_ids],
+            return_exceptions=True,
+        )
+        skipped = 0
+        filtered_map = {}
+        for doc_id, exists in zip(doc_ids, existence_checks):
+            if exists is True:
+                logger.info(f"Skipping distillation for doc {doc_id} (KD entries already exist)")
+                skipped += 1
+            else:
+                filtered_map[doc_id] = doc_chunks_map[doc_id]
+        if skipped:
+            logger.info(f"Skipped {skipped}/{len(doc_ids)} already-distilled documents")
+        doc_chunks_map = filtered_map
+
+    if not doc_chunks_map:
+        logger.info("All documents already distilled, skipping distillation step")
+        return data_chunks
+
     # Process each document
     all_distillation_points = []
     tasks = []
@@ -172,8 +247,9 @@ async def distill_knowledge(
             _distill_single_document(doc_id, chunks, context_char_limit)
         )
 
-    # Use semaphore to limit concurrent LLM calls
-    semaphore = asyncio.Semaphore(3)
+    # Use semaphore to limit concurrent LLM calls (from concurrency.yaml)
+    concurrency = _get_distillation_concurrency()
+    semaphore = asyncio.Semaphore(concurrency)
 
     async def _limited_distill(coro):
         async with semaphore:

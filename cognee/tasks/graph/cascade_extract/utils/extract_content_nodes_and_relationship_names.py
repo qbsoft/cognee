@@ -45,6 +45,7 @@ async def extract_content_nodes_and_relationship_names(
             text_input=text_input,
             system_prompt=system_prompt,
             response_model=PotentialNodesAndRelationshipNames,
+            task_type="graph_extraction",
         )
 
         for node in response.nodes:

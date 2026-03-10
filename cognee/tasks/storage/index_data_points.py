@@ -1,10 +1,25 @@
 import asyncio
+import os
+import yaml
 
 from cognee.shared.logging_utils import get_logger
 from cognee.infrastructure.databases.vector import get_vector_engine
 from cognee.infrastructure.engine import DataPoint
 
 logger = get_logger("index_data_points")
+
+
+def _get_max_concurrent_vector_tasks() -> int:
+    """从 config/concurrency.yaml 读取向量写入并发数，默认 4。"""
+    try:
+        config_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "config", "concurrency.yaml"
+        )
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        return int(cfg.get("concurrency", {}).get("max_concurrent_vector_tasks", 4))
+    except Exception:
+        return 4
 
 
 async def index_data_points(data_points: list[DataPoint]):
@@ -47,41 +62,45 @@ async def index_data_points(data_points: list[DataPoint]):
             indexed_data_point.metadata["index_fields"] = [field_name]
             index_points[index_name].append(indexed_data_point)
 
-    tasks: list[asyncio.Task] = []
+    coroutines = []
     batch_size = vector_engine.embedding_engine.get_batch_size()
-    
-    logger.info(f"Preparing {len(index_points)} index types with batch size {batch_size}")
+    max_concurrent = _get_max_concurrent_vector_tasks()
+
+    logger.info(
+        f"Preparing {len(index_points)} index types with batch size {batch_size}, "
+        f"max_concurrent_vector_tasks={max_concurrent}"
+    )
 
     for index_name_and_field, points in index_points.items():
         first = index_name_and_field.index("_")
         index_name = index_name_and_field[:first]
         field_name = index_name_and_field[first + 1 :]
-        
+
         logger.debug(f"Indexing {len(points)} points for {index_name}.{field_name}")
 
-        # Create embedding requests per batch to run in parallel later
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
-            tasks.append(
-                asyncio.create_task(
-                    vector_engine.index_data_points(index_name, field_name, batch)
-                )
+            coroutines.append(
+                vector_engine.index_data_points(index_name, field_name, batch)
             )
-    
-    logger.info(f"Starting {len(tasks)} vector indexing tasks")
 
-    # Run all embedding requests in parallel with detailed error handling
+    logger.info(f"Starting {len(coroutines)} vector indexing tasks (semaphore={max_concurrent})")
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _run_with_semaphore(coro):
+        async with semaphore:
+            return await coro
+
+    # Run embedding + write tasks with concurrency limit to avoid 429 rate limits
+    # and LanceDB "Too many concurrent writers" errors
     try:
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*[_run_with_semaphore(c) for c in coroutines])
         logger.info(f"Vector indexing completed successfully for {len(data_points)} data points")
     except Exception as e:
         logger.error(f"Vector indexing failed: {type(e).__name__}: {str(e)}", exc_info=True)
-        logger.error(f"Failed during execution of {len(tasks)} indexing tasks")
-        
-        # Log which task types were being processed
+        logger.error(f"Failed during execution of {len(coroutines)} indexing tasks")
         logger.error(f"Index types being processed: {list(index_points.keys())}")
-        
-        # Re-raise to let upstream handle it
         raise RuntimeError(f"Vector indexing failed for {len(data_points)} data points: {str(e)}") from e
 
     return data_points

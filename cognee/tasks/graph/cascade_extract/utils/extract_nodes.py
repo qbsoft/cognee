@@ -32,7 +32,8 @@ async def extract_nodes(text: str, n_rounds: int = 2) -> List[str]:
             "extract_graph_nodes_prompt_system.txt", base_directory=base_directory
         )
         response = await LLMGateway.acreate_structured_output(
-            text_input=text_input, system_prompt=system_prompt, response_model=PotentialNodes
+            text_input=text_input, system_prompt=system_prompt, response_model=PotentialNodes,
+            task_type="graph_extraction",
         )
 
         for node in response.nodes:
