@@ -58,9 +58,10 @@ async def main():
         shutil.rmtree(kd_dir, ignore_errors=True)
     print("  All KD collections deleted")
 
-    # Step 2: Find and process document chunks in user's databases
-    print(f"\nStep 2: Finding document chunks for user {USER_ID}...")
-    lance_dbs = list(user_db_root.rglob("DocumentChunk_text.lance"))
+    # Step 2: Find and process document chunks across ALL user databases
+    # (data may be stored under a different user ID than the current default user)
+    print(f"\nStep 2: Finding document chunks across all databases (current user: {USER_ID})...")
+    lance_dbs = list(DB_ROOT.rglob("DocumentChunk_text.lance"))
     print(f"  Found {len(lance_dbs)} database(s) with DocumentChunk_text")
 
     for chunk_path in lance_dbs:

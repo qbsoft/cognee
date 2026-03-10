@@ -30,7 +30,7 @@ echo 服务将在后台运行，请查看新的命令行窗口...
 echo.
 
 REM 在新窗口中启动服务，这样可以看到日志输出
-start "Cognee Backend Server" cmd /k "cd /d %~dp0 && uv run python -m cognee.api.client"
+start "Cognee Backend Server" cmd /k "cd /d %~dp0 && .venv\Scripts\python.exe -m cognee.api.client"
 
 REM 等待服务启动
 echo [3/3] 等待服务启动...

@@ -2,27 +2,31 @@
 Regression tests for document routing.
 
 Ensures that:
-1. Small datasets (≤20 docs) never trigger routing (identical to pre-routing behavior)
-2. Large datasets trigger routing correctly
+1. Small/medium datasets (< min_doc_count threshold, currently 10000) never trigger routing
+   — identical to pre-routing behavior, protecting precision on typical deployments
+2. Very large datasets (>= min_doc_count) trigger routing correctly
 3. Filtering preserves all results when no document names are specified
 4. Filtering correctly matches the [来源: docname] prefix format
+
+Note: min_doc_count is configured in config/search.yaml (document_routing.min_doc_count).
+      Current default is 10000, meaning routing only activates for enterprise-scale datasets.
 """
 import pytest
 
 
-def test_routing_skipped_for_small_datasets():
-    """Routing must be skipped when doc_count <= 20."""
+def test_routing_skipped_for_small_and_medium_datasets():
+    """Routing must be skipped when doc_count is below min_doc_count (currently 10000)."""
     from cognee.modules.retrieval.graph_completion_retriever import _should_enable_routing
 
-    for count in [0, 1, 2, 5, 10, 15, 20]:
+    for count in [0, 1, 2, 5, 10, 15, 20, 50, 100, 500, 1000, 9999]:
         assert _should_enable_routing(count) == False, f"Routing wrongly enabled for {count} docs"
 
 
-def test_routing_enabled_for_large_datasets():
-    """Routing activates for datasets with >20 documents."""
+def test_routing_enabled_for_very_large_datasets():
+    """Routing activates only for very large datasets (> min_doc_count = 10000)."""
     from cognee.modules.retrieval.graph_completion_retriever import _should_enable_routing
 
-    for count in [21, 50, 100, 500, 1000]:
+    for count in [10001, 50000, 100000]:
         assert _should_enable_routing(count) == True, f"Routing not enabled for {count} docs"
 
 

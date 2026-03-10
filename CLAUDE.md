@@ -16,9 +16,9 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-09 (Phase 20 完成)
+**最后更新**: 2026-03-10 (Phase 21 进行中)
 
-**正在进行的任务**: 无
+**正在进行的任务**: Phase 21 — 向量数据库可插拔（Qdrant 适配器测试 + LanceDB 回归验证）
 
 **已完成**:
 
@@ -280,6 +280,20 @@ e7b5ea84 feat: add SEMANTIC/LLM_ENHANCED chunking (T2A03+T2A04)
 deb7b119 feat: add graph validation (T2A05)
 5b40d4b3 feat: add YAML config system (T2A01)
 ```
+
+### Phase 21: 向量数据库可插拔 (进行中)
+- 背景：大规模验证（52 文档）发现 LanceDB 并发写入天花板低（>3 并发即崩溃）
+- LanceDB 修复：全局写信号量（限制 3 并发）+ 集合级写锁 + 碎片压缩（6000→20 碎片）
+- 新建 `cognee/infrastructure/databases/vector/qdrant/QdrantAdapter.py`（400行，完整实现所有 VectorDBInterface 方法）
+- `create_vector_engine.py` 添加 Qdrant 分支（`elif vector_db_provider.lower() == "qdrant"`）
+- `config.py` 添加 Qdrant 默认路径（`cognee.qdrant`）+ provider-aware 路径选择
+- 切换方式：在 `.env` 设置 `VECTOR_DB_PROVIDER=qdrant`（或 `lancedb`）即可热切换
+- **当前状态**：Qdrant 适配器已写完，正在测试（Qdrant 功能 + LanceDB 回归）
+- **目标**：两个向量数据库可随时切换，互不影响，RAGAS 精度保持 >=93%
+- 其他改动（未提交）：`index_data_points.py` 向量写入并发信号量、`distill_knowledge.py` skip_if_distilled、`extract_*.py` task_type="graph_extraction"
+
+**待规划任务**:
+- Phase 22: 跨文档融合（多文档实体关联、知识图谱合并）——暂缓，待后续规划
 
 **下次可继续的工作**:
 - 所有 Phase 0-20 已完成 ✅
