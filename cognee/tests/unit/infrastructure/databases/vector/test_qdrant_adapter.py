@@ -9,6 +9,12 @@ from uuid import uuid4
 
 from cognee.infrastructure.databases.vector.qdrant.QdrantAdapter import QdrantAdapter
 from cognee.tests.unit.infrastructure.mock_embedding_engine import MockEmbeddingEngine
+from cognee.infrastructure.engine import DataPoint
+
+
+class SimpleDP(DataPoint):
+    text: str
+    metadata: dict = {"index_fields": ["text"]}
 
 
 @pytest.fixture
@@ -38,12 +44,6 @@ async def test_create_collection_idempotent(adapter):
 
 @pytest.mark.asyncio
 async def test_create_data_points_and_retrieve(adapter):
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     dp_id = uuid4()
     dp = SimpleDP(id=dp_id, text="hello qdrant")
 
@@ -56,12 +56,6 @@ async def test_create_data_points_and_retrieve(adapter):
 
 @pytest.mark.asyncio
 async def test_search_returns_results(adapter):
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     for i in range(3):
         dp = SimpleDP(id=uuid4(), text=f"document {i}")
         await adapter.create_data_points("search_col", [dp])
@@ -70,17 +64,12 @@ async def test_search_returns_results(adapter):
     assert len(results) > 0
     # score 是归一化距离，0.0 = 最相似
     assert all(isinstance(r.score, float) for r in results)
+    assert any("document" in r.payload.get("text", "") for r in results)
 
 
 @pytest.mark.asyncio
 async def test_search_limit_none_returns_all(adapter):
     """limit=None 应返回所有文档（对齐 LanceDB 行为）。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     for i in range(20):
         dp = SimpleDP(id=uuid4(), text=f"item {i}")
         await adapter.create_data_points("limit_col", [dp])
@@ -91,12 +80,6 @@ async def test_search_limit_none_returns_all(adapter):
 
 @pytest.mark.asyncio
 async def test_delete_data_points(adapter):
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     dp_id = uuid4()
     dp = SimpleDP(id=dp_id, text="to be deleted")
     await adapter.create_data_points("del_col", [dp])
@@ -108,12 +91,6 @@ async def test_delete_data_points(adapter):
 
 @pytest.mark.asyncio
 async def test_batch_search(adapter):
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     for i in range(5):
         dp = SimpleDP(id=uuid4(), text=f"batch item {i}")
         await adapter.create_data_points("batch_col", [dp])
@@ -123,6 +100,7 @@ async def test_batch_search(adapter):
     )
     assert len(results) == 2
     assert all(len(r) > 0 for r in results)
+    assert all(any("batch item" in r.payload.get("text", "") for r in group) for group in results)
 
 
 @pytest.mark.asyncio
@@ -137,8 +115,6 @@ async def test_prune_deletes_all_collections(adapter):
 @pytest.mark.asyncio
 async def test_index_data_points(adapter):
     """index_data_points 创建 {name}_{field} 集合并插入 IndexSchema。"""
-    from cognee.infrastructure.engine import DataPoint
-
     class EntityDP(DataPoint):
         name: str
         metadata: dict = {"index_fields": ["name"]}
@@ -154,12 +130,6 @@ async def test_index_data_points(adapter):
 @pytest.mark.asyncio
 async def test_concurrent_writes_no_crash(adapter):
     """Qdrant 应能同时处理 20 个并发写入（LanceDB 在此会崩溃）。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     tasks = [
         adapter.create_data_points("concurrent_col", [SimpleDP(id=uuid4(), text=f"item {i}")])
         for i in range(20)
@@ -181,12 +151,6 @@ async def test_search_raises_if_collection_not_found(adapter):
 @pytest.mark.asyncio
 async def test_score_normalization_range(adapter):
     """归一化后 score 应在 [0, 1] 范围内，最相似的在最前。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class SimpleDP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     # 插入相同向量的多个文档（mock embedding 总是返回相同向量）
     for i in range(5):
         dp = SimpleDP(id=uuid4(), text=f"doc {i}")
