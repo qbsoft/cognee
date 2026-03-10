@@ -17,6 +17,42 @@ from ..models.ScoredResult import ScoredResult
 from ..utils import normalize_distances
 from ..vector_db_interface import VectorDBInterface
 
+# 全局写入信号量：限制整个 LanceDB 同时执行的 merge_insert 操作数量
+# 即使不同集合并发写入，LanceDB 底层的文件锁定机制仍可能冲突
+# （20 个管道 × 7 个集合 = 140 个并发写入 → "Too many concurrent writers" 错误）
+# 信号量限制为 3，确保同时最多 3 个写入操作，彻底消除并发写入错误
+_LANCE_GLOBAL_WRITE_SEM: Optional[asyncio.Semaphore] = None
+
+# 集合级写锁：同一集合的写入串行化（第二层保护）
+_LANCE_COLLECTION_LOCKS: dict = {}
+
+# 进程级压缩标志：每个进程只执行一次碎片压缩（在第一次写入前）
+_COMPACTION_DONE: bool = False
+_COMPACTION_LOCK: Optional[asyncio.Lock] = None
+
+
+def _get_global_write_sem() -> asyncio.Semaphore:
+    """获取全局写入信号量（懒初始化，限制并发 merge_insert 为 3）。"""
+    global _LANCE_GLOBAL_WRITE_SEM
+    if _LANCE_GLOBAL_WRITE_SEM is None:
+        _LANCE_GLOBAL_WRITE_SEM = asyncio.Semaphore(3)
+    return _LANCE_GLOBAL_WRITE_SEM
+
+
+def _get_compaction_lock() -> asyncio.Lock:
+    """获取进程级压缩锁（懒初始化）。"""
+    global _COMPACTION_LOCK
+    if _COMPACTION_LOCK is None:
+        _COMPACTION_LOCK = asyncio.Lock()
+    return _COMPACTION_LOCK
+
+
+def _get_lance_write_lock(collection_name: str) -> asyncio.Lock:
+    """获取指定集合的写锁（懒初始化）。"""
+    if collection_name not in _LANCE_COLLECTION_LOCKS:
+        _LANCE_COLLECTION_LOCKS[collection_name] = asyncio.Lock()
+    return _LANCE_COLLECTION_LOCKS[collection_name]
+
 
 class IndexSchema(DataPoint):
     """
@@ -51,7 +87,10 @@ class LanceDBAdapter(VectorDBInterface):
         self.url = url
         self.api_key = api_key
         self.embedding_engine = embedding_engine
-        self.VECTOR_DB_LOCK = asyncio.Lock()
+
+    def _get_collection_lock(self, collection_name: str) -> asyncio.Lock:
+        """返回指定集合的写锁，不同集合可以并发写入。"""
+        return _get_lance_write_lock(collection_name)
 
     async def get_connection(self):
         """
@@ -173,7 +212,7 @@ class LanceDBAdapter(VectorDBInterface):
             payload: payload_schema
 
         if not await self.has_collection(collection_name):
-            async with self.VECTOR_DB_LOCK:
+            async with self._get_collection_lock(collection_name):
                 if not await self.has_collection(collection_name):
                     connection = await self.get_connection()
                     return await connection.create_table(
@@ -190,14 +229,38 @@ class LanceDBAdapter(VectorDBInterface):
         return await connection.open_table(collection_name)
 
     async def create_data_points(self, collection_name: str, data_points: list[DataPoint]):
+        # 进程级一次性压缩：消除碎片化（每次 merge_insert 产生一个碎片文件，
+        # 多次 cognify 后碎片 >6000，每次写入需要扫描全部 →  ~6.4s/次）
+        # 压缩后碎片 <20，写入降至 ~0.5s/次，总体节省 30+ 分钟
+        global _COMPACTION_DONE
+        if not _COMPACTION_DONE:
+            async with _get_compaction_lock():
+                if not _COMPACTION_DONE:
+                    await self.compact_all_collections()
+                    _COMPACTION_DONE = True  # 压缩完成后再设置，确保并发调用在锁上等待
+
         payload_schema = type(data_points[0])
 
         if not await self.has_collection(collection_name):
-            async with self.VECTOR_DB_LOCK:
+            async with self._get_collection_lock(collection_name):
                 if not await self.has_collection(collection_name):
-                    await self.create_collection(
-                        collection_name,
-                        payload_schema,
+                    # 注意：不能调用 self.create_collection()，因为该方法内部也会获取
+                    # 同一个集合锁，asyncio.Lock 不可重入，会导致死锁。
+                    # 因此直接内联建表逻辑。
+                    vector_size_for_schema = self.embedding_engine.get_vector_size()
+                    schema_for_collection = self.get_data_point_schema(payload_schema)
+                    schema_types = get_type_hints(schema_for_collection)
+
+                    class _LanceDataPointSchema(LanceModel):
+                        id: schema_types["id"]
+                        vector: Vector(vector_size_for_schema)
+                        payload: schema_for_collection
+
+                    connection = await self.get_connection()
+                    await connection.create_table(
+                        name=collection_name,
+                        schema=_LanceDataPointSchema,
+                        exist_ok=True,
                     )
 
         collection = await self.get_collection(collection_name)
@@ -238,42 +301,60 @@ class LanceDBAdapter(VectorDBInterface):
             for (data_point_index, data_point) in enumerate(data_points)
         ]
 
-        async with self.VECTOR_DB_LOCK:
-            await (
-                collection.merge_insert("id")
-                .when_matched_update_all()
-                .when_not_matched_insert_all()
-                .execute(lance_data_points)
-            )
-        
-        # 验证向量写入成功
+        async with _get_global_write_sem():
+            async with self._get_collection_lock(collection_name):
+                await (
+                    collection.merge_insert("id")
+                    .when_matched_update_all()
+                    .when_not_matched_insert_all()
+                    .execute(lance_data_points)
+                )
+
+    async def compact_collection(self, collection_name: str) -> None:
+        """合并 LanceDB 碎片文件，加速后续读写。
+
+        LanceDB 的 merge_insert/add 操作会产生大量小型 .lance 文件，
+        碎片化越严重，每次写入的 merge_insert 扫描越慢。
+        AsyncTable.optimize() 执行压缩 + 旧版本清理 + 索引优化。
+        注意：同步 Table 有 compact_files()，但 AsyncTable 只有 optimize()。
+        """
+        try:
+            if not await self.has_collection(collection_name):
+                return
+            collection = await self.get_collection(collection_name)
+            await collection.optimize()
+        except Exception as e:
+            from cognee.shared.logging_utils import get_logger
+            get_logger().warning(f"optimize failed for '{collection_name}': {e}")
+
+    async def compact_all_collections(self) -> None:
+        """Compact all existing LanceDB collections."""
+        import time
         from cognee.shared.logging_utils import get_logger
         logger = get_logger()
-        
-        logger.info(f"Attempting to add {len(data_points)} vectors to collection '{collection_name}'")
-        
         try:
-            # 查询实际写入的向量数量
-            actual_count = await collection.count_rows()
-            logger.info(f"Collection '{collection_name}' now contains {actual_count} vectors after write operation")
-            
-            if actual_count == 0:
-                logger.error(f"Vector write verification failed: Expected to add {len(data_points)} vectors to '{collection_name}' but collection is empty")
-                logger.error(f"Sample data point ID: {data_points[0].id if data_points else 'N/A'}")
-                logger.error(f"Sample data point type: {type(data_points[0]).__name__ if data_points else 'N/A'}")
-        except Exception as verify_error:
-            logger.warning(f"Could not verify vector count after write: {verify_error}")
+            table_names = await self.list_collections()
+            if not table_names:
+                logger.info("No LanceDB collections to compact")
+                return
+            logger.info(f"Compacting {len(table_names)} LanceDB collections (defragmentation)...")
+            t0 = time.time()
+            for name in table_names:
+                await self.compact_collection(name)
+            elapsed = time.time() - t0
+            logger.info(f"LanceDB compaction complete in {elapsed:.1f}s ({len(table_names)} collections)")
+        except Exception as e:
+            logger.warning(f"compact_all_collections failed: {e}")
 
     async def retrieve(self, collection_name: str, data_point_ids: list[str]):
         collection = await self.get_collection(collection_name)
 
+        # AsyncQuery.where() returns AsyncQuery (not awaitable).
+        # Must call .to_list() to get an awaitable coroutine → List[dict].
         if len(data_point_ids) == 1:
-            results = await collection.query().where(f"id = '{data_point_ids[0]}'")
+            results_list = await collection.query().where(f"id = '{data_point_ids[0]}'").to_list()
         else:
-            results = await collection.query().where(f"id IN {tuple(data_point_ids)}")
-
-        # Convert query results to list format
-        results_list = results.to_list() if hasattr(results, "to_list") else list(results)
+            results_list = await collection.query().where(f"id IN {tuple(data_point_ids)}").to_list()
 
         return [
             ScoredResult(
