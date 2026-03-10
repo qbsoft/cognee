@@ -6,12 +6,18 @@ LanceDB 并发写入修复回归测试。
 - 20 个并发写入不崩溃（修复前 >3 并发即报 "Too many concurrent writers"）
 - compact_all_collections 方法可正常调用
 """
-import pytest
 import asyncio
+import pytest
 from uuid import uuid4
 
 from cognee.infrastructure.databases.vector.lancedb.LanceDBAdapter import LanceDBAdapter
+from cognee.infrastructure.engine import DataPoint
 from cognee.tests.unit.infrastructure.mock_embedding_engine import MockEmbeddingEngine
+
+
+class DP(DataPoint):
+    text: str
+    metadata: dict = {"index_fields": ["text"]}
 
 
 @pytest.fixture
@@ -32,12 +38,6 @@ def adapter(tmp_path):
 @pytest.mark.asyncio
 async def test_concurrent_writes_20_same_collection(adapter):
     """20 个并发写入同一集合：信号量限制 3 并发，不应崩溃。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class DP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     tasks = [
         adapter.create_data_points("concurrent_col", [DP(id=uuid4(), text=f"item {i}")])
         for i in range(20)
@@ -51,12 +51,6 @@ async def test_concurrent_writes_20_same_collection(adapter):
 @pytest.mark.asyncio
 async def test_concurrent_writes_different_collections(adapter):
     """不同集合的并发写入应当互不阻塞。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class DP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     tasks = [
         adapter.create_data_points(f"col_{i}", [DP(id=uuid4(), text=f"data {i}")])
         for i in range(5)
@@ -70,12 +64,6 @@ async def test_concurrent_writes_different_collections(adapter):
 @pytest.mark.asyncio
 async def test_create_and_search_basic(adapter):
     """基本增查功能回归：确保并发修复没有破坏正常写入逻辑。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class DP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     dp = DP(id=uuid4(), text="lancedb regression test")
     await adapter.create_data_points("basic_col", [dp])
 
@@ -87,15 +75,8 @@ async def test_create_and_search_basic(adapter):
 @pytest.mark.asyncio
 async def test_search_limit_none(adapter):
     """limit=None 应返回全部文档。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class DP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
-    for i in range(20):
-        dp = DP(id=uuid4(), text=f"entry {i}")
-        await adapter.create_data_points("limit_col", [dp])
+    dps = [DP(id=uuid4(), text=f"entry {i}") for i in range(20)]
+    await adapter.create_data_points("limit_col", dps)
 
     results = await adapter.search("limit_col", query_text="entry", limit=None)
     assert len(results) == 20
@@ -104,12 +85,6 @@ async def test_search_limit_none(adapter):
 @pytest.mark.asyncio
 async def test_prune_clears_database(adapter):
     """prune() 应清空所有集合。"""
-    from cognee.infrastructure.engine import DataPoint
-
-    class DP(DataPoint):
-        text: str
-        metadata: dict = {"index_fields": ["text"]}
-
     await adapter.create_data_points("to_prune", [DP(id=uuid4(), text="temporary")])
     connection = await adapter.get_connection()
     tables_before = await connection.table_names()
@@ -120,14 +95,16 @@ async def test_prune_clears_database(adapter):
     assert len(tables_after) == 0
 
 
-@pytest.mark.asyncio
-async def test_global_write_semaphore_exists():
+def test_global_write_semaphore_exists():
     """全局写信号量应存在且初始容量为 3。"""
     import cognee.infrastructure.databases.vector.lancedb.LanceDBAdapter as mod
     mod._LANCE_GLOBAL_WRITE_SEM = None  # reset
     sem = mod._get_global_write_sem()
-    # asyncio.Semaphore 内部值：Python 3.10+ 使用 _value
-    assert sem._value == 3
+    # 验证信号量允许 3 个并发：能创建且是 asyncio.Semaphore 实例
+    assert isinstance(sem, asyncio.Semaphore)
+    # 通过 _value 或 _initial_value 验证初始容量（CPython 实现）
+    initial = getattr(sem, '_value', getattr(sem, '_initial_value', None))
+    assert initial == 3, f"Expected semaphore capacity 3, got {initial}"
 
 
 @pytest.mark.asyncio
