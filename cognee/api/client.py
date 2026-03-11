@@ -18,7 +18,8 @@ from cognee.exceptions import CogneeApiError
 from cognee.shared.logging_utils import get_logger, setup_logging
 from cognee.api.health import health_checker, HealthStatus
 from cognee.api.v1.cloud.routers import get_checks_router
-from cognee.api.v1.notebooks.routers import get_notebooks_router
+# Removed: notebooks router (unused module)
+# from cognee.api.v1.notebooks.routers import get_notebooks_router
 from cognee.api.v1.permissions.routers import get_permissions_router
 from cognee.api.v1.settings.routers import get_settings_router
 from cognee.api.v1.datasets.routers import get_datasets_router
@@ -28,9 +29,11 @@ from cognee.api.v1.memify.routers import get_memify_router
 from cognee.api.v1.add.routers import get_add_router
 from cognee.api.v1.delete.routers import get_delete_router
 from cognee.api.v1.responses.routers import get_responses_router
-from cognee.api.v1.sync.routers import get_sync_router
+# Removed: sync router (unused module)
+# from cognee.api.v1.sync.routers import get_sync_router
 from cognee.api.v1.update.routers import get_update_router
-from cognee.api.v1.api_keys.routers import get_api_keys_router
+# Removed: api-keys router (unused module)
+# from cognee.api.v1.api_keys.routers import get_api_keys_router
 from cognee.api.v1.users.routers import (
     get_auth_router,
     get_register_router,
@@ -302,7 +305,8 @@ app.include_router(get_update_router(), prefix="/api/v1/update", tags=["update"]
 
 app.include_router(get_responses_router(), prefix="/api/v1/responses", tags=["responses"])
 
-app.include_router(get_sync_router(), prefix="/api/v1/sync", tags=["sync"])
+# Removed: sync router
+# app.include_router(get_sync_router(), prefix="/api/v1/sync", tags=["sync"])
 
 codegraph_routes = get_code_pipeline_router()
 if codegraph_routes:
@@ -314,11 +318,12 @@ app.include_router(
     tags=["users"],
 )
 
-app.include_router(
-    get_notebooks_router(),
-    prefix="/api/v1/notebooks",
-    tags=["notebooks"],
-)
+# Removed: notebooks router
+# app.include_router(
+#     get_notebooks_router(),
+#     prefix="/api/v1/notebooks",
+#     tags=["notebooks"],
+# )
 
 app.include_router(
     get_checks_router(),
@@ -326,11 +331,12 @@ app.include_router(
     tags=["checks"],
 )
 
-app.include_router(
-    get_api_keys_router(),
-    prefix="/api/v1/api-keys",
-    tags=["api-keys"],
-)
+# Removed: api-keys router
+# app.include_router(
+#     get_api_keys_router(),
+#     prefix="/api/v1/api-keys",
+#     tags=["api-keys"],
+# )
 
 app.include_router(
     get_model_provider_router(),

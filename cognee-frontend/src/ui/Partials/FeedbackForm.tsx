@@ -52,6 +52,7 @@ export default function FeedbackForm({ onSuccess }: FeedbackFormProps) {
       <div className="flex flex-col gap-2">
         <div className="mb-4">
           <label className="block text-white" htmlFor="feedback">Feedback on agent&apos;s reasoning</label>
+          {/* @ts-expect-error pre-existing type mismatch */}
           <TextArea id="feedback" name="feedback" type="text" placeholder="Your feedback" />
         </div>
       </div>

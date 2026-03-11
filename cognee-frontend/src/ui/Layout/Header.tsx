@@ -6,10 +6,9 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useBoolean, fetch } from "@/utils";
 
-import { CloseIcon, CloudIcon, CogneeIcon } from "../Icons";
-import { CTAButton, GhostButton, IconButton, Modal, StatusDot } from "../elements";
+import { CogneeIcon } from "../Icons";
+import { StatusDot } from "../elements";
 import LanguageSwitcher from "../elements/LanguageSwitcher";
-import syncData from "@/modules/cloud/syncData";
 import "@/i18n/i18n";
 
 interface HeaderProps {
@@ -29,7 +28,7 @@ export default function Header({ user }: HeaderProps) {
   // 根据用户角色决定权限管理页面的链接
   const getPermissionsLink = () => {
     if (!user) return "/admin";
-    
+
     // 超级管理员 -> /admin
     if (user.is_superuser) {
       return "/admin";
@@ -50,23 +49,10 @@ export default function Header({ user }: HeaderProps) {
   };
 
   const {
-    value: isSyncModalOpen,
-    setTrue: openSyncModal,
-    setFalse: closeSyncModal,
-  } = useBoolean(false);
-
-  const {
     value: isMCPConnected,
     setTrue: setMCPConnected,
     setFalse: setMCPDisconnected,
   } = useBoolean(false);
-
-  const handleDataSyncConfirm = () => {
-    syncData()
-      .finally(() => {
-        closeSyncModal();
-      });
-  };
 
   useEffect(() => {
     const checkMCPConnection = () => {
@@ -82,63 +68,36 @@ export default function Header({ user }: HeaderProps) {
   }, [setMCPConnected, setMCPDisconnected]);
 
   return (
-    <>
-      <header className="relative flex flex-row h-14 min-h-14 px-5 items-center justify-between w-full max-w-[1920px] mx-auto">
-        <div className="flex flex-row gap-4 items-center">
-          <CogneeIcon />
-          <div className="text-lg">Cognee Local</div>
-        </div>
+    <header className="relative flex flex-row h-14 min-h-14 px-5 items-center justify-between w-full max-w-[1920px] mx-auto">
+      <div className="flex flex-row gap-4 items-center">
+        <CogneeIcon />
+        <div className="text-lg">Cognee Local</div>
+      </div>
 
-        <div className="flex flex-row items-center gap-2.5">
-          <Link href="/mcp-status" className="!text-indigo-600 pl-4 pr-4">
-            <StatusDot className="mr-2" isActive={isMCPConnected} />
-            {isMCPConnected ? t("instances.mcpConnected") : t("instances.mcpDisconnected")}
+      <div className="flex flex-row items-center gap-2.5">
+        <Link href="/mcp-status" className="!text-indigo-600 pl-4 pr-4">
+          <StatusDot className="mr-2" isActive={isMCPConnected} />
+          {isMCPConnected ? t("instances.mcpConnected") : t("instances.mcpDisconnected")}
+        </Link>
+        <Link href="/settings/models" className="!text-indigo-600 pl-4 pr-4">
+          模型配置
+        </Link>
+        {shouldShowPermissionsLink() && (
+          <Link href={getPermissionsLink()} className="!text-indigo-600 pl-4 pr-4">
+            权限管理
           </Link>
-          <Link href="/settings/models" className="!text-indigo-600 pl-4 pr-4">
-            模型配置
-          </Link>
-          {shouldShowPermissionsLink() && (
-            <Link href={getPermissionsLink()} className="!text-indigo-600 pl-4 pr-4">
-              权限管理
-            </Link>
+        )}
+        <LanguageSwitcher />
+        <Link href="/account" className="bg-indigo-600 w-8 h-8 rounded-full overflow-hidden">
+          {user?.picture ? (
+            <Image width="32" height="32" alt="Name of the user" src={user.picture} />
+          ) : (
+            <div className="w-8 h-8 rounded-full text-white flex items-center justify-center">
+              {user?.email?.charAt(0) || "C"}
+            </div>
           )}
-          <GhostButton onClick={openSyncModal} className="text-indigo-600 gap-3 pl-4 pr-4">
-            <CloudIcon />
-            <div>{t("navigation.sync")}</div>
-          </GhostButton>
-          <a href="/plan" className="!text-indigo-600 pl-4 pr-4">
-            {t("navigation.premium")}
-          </a>
-          <a href="https://platform.cognee.ai" className="!text-indigo-600 pl-4 pr-4">{t("navigation.apiKeys")}</a>
-          <LanguageSwitcher />
-          {/* <div className="px-2 py-2 mr-3">
-            <SettingsIcon />
-          </div> */}
-          <Link href="/account" className="bg-indigo-600 w-8 h-8 rounded-full overflow-hidden">
-            {user?.picture ? (
-              <Image width="32" height="32" alt="Name of the user" src={user.picture} />
-            ) : (
-              <div className="w-8 h-8 rounded-full text-white flex items-center justify-center">
-                {user?.email?.charAt(0) || "C"}
-              </div>
-            )}
-          </Link>
-        </div>
-      </header>
-
-      <Modal isOpen={isSyncModalOpen}>
-        <div className="w-full max-w-2xl">
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-2xl">{t("sync.title")}</span>
-            <IconButton onClick={closeSyncModal}><CloseIcon /></IconButton>
-          </div>
-          <div className="mt-8 mb-6">{t("sync.description")}</div>
-          <div className="flex flex-row gap-4 mt-4 justify-end">
-            <GhostButton type="button" onClick={closeSyncModal}>{t("common.cancel")}</GhostButton>
-            <CTAButton onClick={handleDataSyncConfirm} type="submit">{t("common.confirm")}</CTAButton>
-          </div>
-        </div>
-      </Modal>
-    </>
+        </Link>
+      </div>
+    </header>
   );
 }

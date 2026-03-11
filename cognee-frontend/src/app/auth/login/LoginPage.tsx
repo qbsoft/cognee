@@ -85,7 +85,7 @@ export default function LoginPage() {
       else {
         router.push("/dashboard");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("获取用户信息失败:", error);
       console.error("Error details:", {
         message: error?.message,
