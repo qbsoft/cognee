@@ -16,9 +16,9 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-10 (Phase 21 进行中)
+**最后更新**: 2026-03-11 (Phase 23 已完成)
 
-**正在进行的任务**: Phase 21 — 向量数据库可插拔（Qdrant 适配器测试 + LanceDB 回归验证）
+**正在进行的任务**: 无（Phase 23 已完成，等待用户确认下一步）
 
 **已完成**:
 
@@ -212,7 +212,7 @@
 - I4: 清理 format_triplets 调试残留代码
 - 设计文档: docs/plans/2026-02-26-retrieval-quality-optimization.md
 
-**测试总数**: 1363 passed, 4 skipped (65 commits)
+**测试总数**: 1409 passed, 4 skipped (72 commits)
 
 **Git Commits (66个)**:
 ```
@@ -281,22 +281,54 @@ deb7b119 feat: add graph validation (T2A05)
 5b40d4b3 feat: add YAML config system (T2A01)
 ```
 
-### Phase 21: 向量数据库可插拔 (进行中)
+### Phase 21: 向量数据库可插拔 (已完成)
 - 背景：大规模验证（52 文档）发现 LanceDB 并发写入天花板低（>3 并发即崩溃）
 - LanceDB 修复：全局写信号量（限制 3 并发）+ 集合级写锁 + 碎片压缩（6000→20 碎片）
 - 新建 `cognee/infrastructure/databases/vector/qdrant/QdrantAdapter.py`（400行，完整实现所有 VectorDBInterface 方法）
 - `create_vector_engine.py` 添加 Qdrant 分支（`elif vector_db_provider.lower() == "qdrant"`）
 - `config.py` 添加 Qdrant 默认路径（`cognee.qdrant`）+ provider-aware 路径选择
 - 切换方式：在 `.env` 设置 `VECTOR_DB_PROVIDER=qdrant`（或 `lancedb`）即可热切换
-- **当前状态**：Qdrant 适配器已写完，正在测试（Qdrant 功能 + LanceDB 回归）
-- **目标**：两个向量数据库可随时切换，互不影响，RAGAS 精度保持 >=93%
-- 其他改动（未提交）：`index_data_points.py` 向量写入并发信号量、`distill_knowledge.py` skip_if_distilled、`extract_*.py` task_type="graph_extraction"
+- 12 个 Qdrant 适配器单元测试 + 5 个 LanceDB/Qdrant 切换集成测试
+- 其他改动：`index_data_points.py` 向量写入并发信号量、`distill_knowledge.py` skip_if_distilled、`extract_*.py` task_type="graph_extraction"
+
+### Phase 23: Dashboard 重设计 — 顶部 Tab 导航布局 (已完成, 7 files, 5 commits)
+- 重新设计 Dashboard 从侧边栏-手风琴布局为顶部 Tab 导航（LightRAG 风格）
+- 新建 `SettingsDropdown.tsx`：齿轮图标下拉菜单（模型配置 + 权限管理）
+- 重写 `Header.tsx`：Logo（左）| Tab导航（中）| 设置+头像（右）
+- 4个 Tab：数据集（卡片网格 + 搜索过滤）| 知识图谱（图谱可视化）| 搜索（搜索表单）| API（接口文档 + 状态）
+- 新建 `tabs/` 目录：DatasetsTab / GraphTab / SearchTab / ApiTab / index.ts
+- 重写 `Dashboard.tsx`：Tab 状态管理 + 隐藏 DatasetsAccordion 数据源
+- 修复 `LoginPage.tsx`：移除无效的 `i18nInstance.init()` 调用（运行时错误）
+- 4 个 Tab 全部通过视觉验证：布局正确，功能完整
+- Commits: 394fda48 / dddea808 / da1d99b6 / fdd39e49 / 4ff37201
+
+### Phase 22: LLM Gateway + 模型供应商配置 UI (已完成, 20 files, 47 tests, 1 commit)
+- **目标**: 替换硬编码 LLM 配置，支持中国国产模型 + 本地部署 + 国际模型，前端可视化配置
+- **Provider Registry**: 14 个供应商定义（代码级常量，无需外部下载）
+  - 7 个中国云端: DashScope/通义千问、DeepSeek、智谱/GLM、Moonshot/月之暗面、百川、MiniMax、SiliconFlow
+  - 4 个国际云端: OpenAI、Anthropic、Google/Gemini、Mistral
+  - 3 个本地部署: Ollama、vLLM、LM Studio + 1 个自定义(Custom)
+- **DB 模型**: `UserModelConfig`（per-user 供应商凭证，API Key base64 编码）+ `UserDefaultModel`（per-user 任务级模型选择）
+- **Service 层**: `ModelProviderService`（CRUD + 连接测试 + 模型配置解析，优先级: 用户DB > YAML > .env）
+- **API Router**: 7 个端点（list/get/save/delete config, test connection, get/set defaults）
+- **LLMGateway 重构**: `get_llm_client()` 添加 `api_key_override/endpoint_override/provider_override` 参数
+  - 新增 `get_llm_client_for_user()` 异步函数：从用户 DB 配置解析 LLM 客户端
+- **前端**: Next.js 模型配置页面 (`/settings/models`)
+  - 两个标签页: "模型供应商"（按类别分组卡片）+ "默认模型"（chat/extraction/embedding 选择）
+  - 配置弹窗: API Key 输入 + Base URL + 连接测试 + 保存/删除
+  - Header 导航栏添加"模型配置"链接
+- **测试**: 47 个单元测试全部通过（registry 17 + DB models 12 + router 12 + get_llm_client 6）
+- **回归**: 1409 passed, 30 failed（全部预先存在：17 neo4j 缺包 + 2 旧测试未同步 + 1 config 变更）
 
 **待规划任务**:
-- Phase 22: 跨文档融合（多文档实体关联、知识图谱合并）——暂缓，待后续规划
+- Phase 23: 跨文档融合（多文档实体关联、知识图谱合并）——暂缓，待后续规划
 
 **下次可继续的工作**:
-- 所有 Phase 0-20 已完成 ✅
+- 所有 Phase 0-22 已完成 ✅
+- **Phase 23 Dashboard 重设计已完成**: 4-Tab 顶部导航布局（数据集/知识图谱/搜索/API），视觉验证通过
+- **Phase 22 模型配置 UI 已完成**: 前端 `/settings/models` 页面可配置 14 个供应商
+  - 需要 E2E 验证: 启动后端 + 前端，测试完整配置流程（添加供应商凭证→连接测试→设置默认模型→搜索使用用户配置）
+  - 需要验证: DB 表自动创建（`user_model_configs` + `user_default_models`）
 - **双场景 RAGAS 精度验证通过** (Phase 20):
   - no-scope（系统自动找文档）: **94.6%** ✅
   - document_scope（指定文档名称）: **95.0%** ✅
