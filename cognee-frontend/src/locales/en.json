@@ -10,7 +10,8 @@
         "edit": "edit",
         "save": "save",
         "copy": "Copy",
-        "copied": "Copied"
+        "copied": "Copied",
+        "loading": "Loading..."
     },
     "navigation": {
         "addData": "Add data to cognee",
@@ -66,7 +67,99 @@
         "signup": {
             "title": "Welcome to Sign Up",
             "subtitle": "Start using Cognee",
-            "loginLink": "Already have an account? Go to Login ->"
+            "loginLink": "Already have an account? Go to Login ->",
+            "inviteBanner": "\u2713 You are registering via invitation link",
+            "tenantCodeBanner": "\u2139\ufe0f Please enter your organization's tenant code to register",
+            "tenantCodeLabel": "Tenant Code* (6 characters)",
+            "tenantCodePlaceholder": "Enter 6-character tenant code",
+            "tenantCodeHint": "Enter the 6-character tenant code provided by your organization",
+            "emailLabel": "Email address*",
+            "passwordLabel": "Password*",
+            "passwordPlaceholder": "At least 8 characters",
+            "passwordHint": "Password must be at least 8 characters; recommended to include letters, numbers and special characters",
+            "registering": "Registering...",
+            "registerButton": "Register",
+            "missingTenantCode": "Please enter tenant code",
+            "registerFailed": "Registration failed, please try again",
+            "inviteAutoJoin": "After registering via invitation link, you will automatically join the corresponding tenant",
+            "errors": {
+                "userExists": "User already exists",
+                "invalidPassword": "Password does not meet requirements",
+                "invalidTenantCode": "Invalid tenant code",
+                "invalidInviteToken": "Invitation link expired or invalid",
+                "tenantNotFound": "Tenant not found"
+            }
+        }
+    },
+    "settings": {
+        "models": {
+            "loading": "Loading...",
+            "backHome": "Back to Home",
+            "title": "Model Configuration",
+            "subtitle": "Manage your AI model providers and default model selection",
+            "tabProviders": "Model Providers",
+            "tabDefaults": "Default Models",
+            "noProviders": "No available model providers",
+            "testingConnection": "Testing connection...",
+            "testRequestFailed": "Test request failed",
+            "defaultUpdated": "Default model updated",
+            "saveFailed": "Save failed",
+            "status": {
+                "notConfigured": "Not configured",
+                "enabled": "Enabled",
+                "disabled": "Disabled"
+            },
+            "card": {
+                "configure": "Configure",
+                "editConfig": "Edit Config",
+                "test": "Test",
+                "supportedModels": "Supported models:"
+            },
+            "modal": {
+                "apiKeyPlaceholder": "Enter your API Key",
+                "apiBaseUrl": "API Base URL",
+                "apiBaseDefault": "Default: {{url}}",
+                "testSuccess": "Connection successful",
+                "testFailed": "Connection failed",
+                "latency": "Latency: {{ms}}ms",
+                "modelsDiscovered": "Discovered {{count}} models:",
+                "deleting": "Deleting...",
+                "deleteConfig": "Delete Config",
+                "testing": "Testing...",
+                "testConnection": "Test Connection",
+                "saving": "Saving...",
+                "saveConfig": "Save Config",
+                "confirmDelete": "Are you sure you want to delete this config?",
+                "saveSuccess": "Config saved",
+                "deleteSuccess": "Config deleted",
+                "deleteFailed": "Delete failed",
+                "connectedMs": "Connected ({{ms}}ms)",
+                "connectionFailed": "Connection failed",
+                "testReqFailed": "Test request failed",
+                "saveFailed": "Save failed"
+            },
+            "defaults": {
+                "provider": "Provider",
+                "model": "Model",
+                "useSystemDefault": "Use system default",
+                "selectModel": "Select model",
+                "save": "Save",
+                "hint": "Select default models for different task types. When not configured, system global config (.env) is used.\nOnly configured and enabled providers appear as options."
+            },
+            "taskTypes": {
+                "chat": {
+                    "label": "Chat / Search Answer",
+                    "desc": "Used for Q&A and search result generation; recommend a powerful model for best quality"
+                },
+                "extraction": {
+                    "label": "Information Extraction / Summarization",
+                    "desc": "Used for graph building, knowledge distillation, text summarization; can use a fast model to improve speed"
+                },
+                "embedding": {
+                    "label": "Vector Embedding",
+                    "desc": "Used for text vectorization; dimensions must match the vector database"
+                }
+            }
         }
     },
     "dashboard": {

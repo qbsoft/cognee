@@ -10,7 +10,8 @@
         "edit": "编辑",
         "save": "保存",
         "copy": "复制",
-        "copied": "已复制"
+        "copied": "已复制",
+        "loading": "加载中..."
     },
     "navigation": {
         "addData": "添加数据到 cognee",
@@ -66,7 +67,99 @@
         "signup": {
             "title": "欢迎注册",
             "subtitle": "开始使用 Cognee",
-            "loginLink": "已有账号？去登录 ->"
+            "loginLink": "已有账号？去登录 ->",
+            "inviteBanner": "✓ 您正在通过邀请链接注册",
+            "tenantCodeBanner": "ℹ️ 请输入您组织提供的租户编码进行注册",
+            "tenantCodeLabel": "租户编码* (6位字符)",
+            "tenantCodePlaceholder": "输入6位租户编码",
+            "tenantCodeHint": "请输入您组织提供的6位租户编码",
+            "emailLabel": "邮箱地址*",
+            "passwordLabel": "密码*",
+            "passwordPlaceholder": "至少8位字符",
+            "passwordHint": "密码至少8位，建议包含字母、数字和特殊字符",
+            "registering": "注册中...",
+            "registerButton": "注册",
+            "missingTenantCode": "请输入租户编码",
+            "registerFailed": "注册失败，请重试",
+            "inviteAutoJoin": "通过邀请链接注册后，您将自动加入对应的租户",
+            "errors": {
+                "userExists": "用户已存在",
+                "invalidPassword": "密码不符合要求",
+                "invalidTenantCode": "无效的租户编码",
+                "invalidInviteToken": "邀请链接已过期或无效",
+                "tenantNotFound": "租户不存在"
+            }
+        }
+    },
+    "settings": {
+        "models": {
+            "loading": "加载中...",
+            "backHome": "返回主页",
+            "title": "模型配置",
+            "subtitle": "管理您的 AI 模型供应商和默认模型选择",
+            "tabProviders": "模型供应商",
+            "tabDefaults": "默认模型",
+            "noProviders": "暂无可用的模型供应商",
+            "testingConnection": "正在测试连接...",
+            "testRequestFailed": "测试请求失败",
+            "defaultUpdated": "默认模型已更新",
+            "saveFailed": "保存失败",
+            "status": {
+                "notConfigured": "未配置",
+                "enabled": "已启用",
+                "disabled": "已禁用"
+            },
+            "card": {
+                "configure": "配置",
+                "editConfig": "修改配置",
+                "test": "测试",
+                "supportedModels": "支持模型:"
+            },
+            "modal": {
+                "apiKeyPlaceholder": "输入您的 API Key",
+                "apiBaseUrl": "API 地址",
+                "apiBaseDefault": "默认: {{url}}",
+                "testSuccess": "连接成功",
+                "testFailed": "连接失败",
+                "latency": "延迟: {{ms}}ms",
+                "modelsDiscovered": "发现 {{count}} 个模型:",
+                "deleting": "删除中...",
+                "deleteConfig": "删除配置",
+                "testing": "测试中...",
+                "testConnection": "测试连接",
+                "saving": "保存中...",
+                "saveConfig": "保存配置",
+                "confirmDelete": "确定要删除此配置吗？",
+                "saveSuccess": "配置已保存",
+                "deleteSuccess": "配置已删除",
+                "deleteFailed": "删除失败",
+                "connectedMs": "连接成功 ({{ms}}ms)",
+                "connectionFailed": "连接失败",
+                "testReqFailed": "测试请求失败",
+                "saveFailed": "保存失败"
+            },
+            "defaults": {
+                "provider": "供应商",
+                "model": "模型",
+                "useSystemDefault": "使用系统默认",
+                "selectModel": "选择模型",
+                "save": "保存",
+                "hint": "为不同任务类型选择默认模型。未配置时将使用系统全局配置（.env）。\n只有已配置并启用的供应商才会出现在选项中。"
+            },
+            "taskTypes": {
+                "chat": {
+                    "label": "对话 / 搜索回答",
+                    "desc": "用于对话式问答和搜索结果生成，建议使用强模型以确保回答质量"
+                },
+                "extraction": {
+                    "label": "信息提取 / 摘要",
+                    "desc": "用于图谱构建、知识蒸馏、文本摘要等，可使用快速模型以提高速度"
+                },
+                "embedding": {
+                    "label": "向量嵌入",
+                    "desc": "用于文本向量化，需与向量数据库维度匹配"
+                }
+            }
         }
     },
     "dashboard": {
