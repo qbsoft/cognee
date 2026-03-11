@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -13,14 +12,6 @@ import AuthForm from "../AuthForm";
 export default function LoginPage() {
   const router = useRouter();
   const { t, i18n: i18nInstance } = useTranslation();
-
-  // 初始化 i18n
-  useEffect(() => {
-    // 确保 i18n已加载
-    if (!i18nInstance.isInitialized) {
-      i18nInstance.init();
-    }
-  }, [i18nInstance]);
 
   // 语言切换函数
   const toggleLanguage = () => {
