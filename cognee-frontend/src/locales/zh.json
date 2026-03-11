@@ -43,6 +43,12 @@
         "ourPlatform": "我们的平台",
         "apiKeyPlaceholder": "云端 API 密钥"
     },
+    "tabs": {
+        "datasets": "数据集",
+        "graph": "知识图谱",
+        "search": "搜索",
+        "api": "API"
+    },
     "auth": {
         "login": {
             "title": "欢迎回来",

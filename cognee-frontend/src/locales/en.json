@@ -43,6 +43,12 @@
         "ourPlatform": "our platform.",
         "apiKeyPlaceholder": "cloud API key"
     },
+    "tabs": {
+        "datasets": "Datasets",
+        "graph": "Knowledge Graph",
+        "search": "Search",
+        "api": "API"
+    },
     "auth": {
         "login": {
             "title": "Welcome",
