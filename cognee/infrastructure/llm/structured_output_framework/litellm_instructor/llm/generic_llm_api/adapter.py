@@ -1,11 +1,9 @@
-"""Adapter for Generic API LLM provider API"""
+"""Adapter for Generic API LLM provider API (OpenAI-compatible endpoints)"""
 
-import litellm
 import instructor
 from typing import Type
 from pydantic import BaseModel
-from openai import ContentFilterFinishReasonError
-from litellm.exceptions import ContentPolicyViolationError
+from openai import AsyncOpenAI, ContentFilterFinishReasonError, APIConnectionError, APITimeoutError
 from instructor.core import InstructorRetryException
 
 from cognee.infrastructure.llm.exceptions import ContentPolicyFilterError
@@ -19,7 +17,7 @@ from tenacity import (
     retry,
     stop_after_delay,
     wait_exponential_jitter,
-    retry_if_not_exception_type,
+    retry_if_exception_type,
     before_sleep_log,
 )
 
@@ -28,15 +26,10 @@ logger = get_logger()
 
 class GenericAPIAdapter(LLMInterface):
     """
-    Adapter for Generic API LLM provider API.
+    Adapter for Generic API LLM provider API (OpenAI-compatible endpoints).
 
-    This class initializes the API adapter with necessary credentials and configurations for
-    interacting with a language model. It provides methods for creating structured outputs
-    based on user input and system prompts.
-
-    Public methods:
-    - acreate_structured_output(text_input: str, system_prompt: str, response_model:
-    Type[BaseModel]) -> BaseModel
+    Supports DashScope, DeepSeek, Zhipu, Moonshot, SiliconFlow, vLLM, LM Studio,
+    and any other provider with an OpenAI-compatible /v1/chat/completions endpoint.
     """
 
     name: str
@@ -64,40 +57,30 @@ class GenericAPIAdapter(LLMInterface):
         self.fallback_api_key = fallback_api_key
         self.fallback_endpoint = fallback_endpoint
 
-        self.aclient = instructor.from_litellm(litellm.acompletion, mode=instructor.Mode.JSON)
+        # Build OpenAI-compatible async client
+        client_kwargs = {"api_key": api_key or ""}
+        if endpoint:
+            client_kwargs["base_url"] = endpoint
+        async_client = AsyncOpenAI(**client_kwargs)
+        self.aclient = instructor.from_openai(async_client, mode=instructor.Mode.JSON)
+
+        # Build fallback client if configured
+        self._fallback_aclient = None
+        if fallback_model and fallback_api_key and fallback_endpoint:
+            fb_client = AsyncOpenAI(api_key=fallback_api_key, base_url=fallback_endpoint)
+            self._fallback_aclient = instructor.from_openai(fb_client, mode=instructor.Mode.JSON)
 
     @retry(
         stop=stop_after_delay(128),
         wait=wait_exponential_jitter(2, 128),
-        retry=retry_if_not_exception_type(litellm.exceptions.NotFoundError),
+        retry=retry_if_exception_type((APIConnectionError, APITimeoutError, ConnectionError)),
         before_sleep=before_sleep_log(logger, logging.DEBUG),
         reraise=True,
     )
     async def acreate_structured_output(
         self, text_input: str, system_prompt: str, response_model: Type[BaseModel]
     ) -> BaseModel:
-        """
-        Generate a response from a user query.
-
-        This asynchronous method sends a user query and a system prompt to a language model and
-        retrieves the generated response. It handles API communication and retries up to a
-        specified limit in case of request failures.
-
-        Parameters:
-        -----------
-
-            - text_input (str): The input text from the user to generate a response for.
-            - system_prompt (str): A prompt that provides context or instructions for the
-              response generation.
-            - response_model (Type[BaseModel]): A Pydantic model that defines the structure of
-              the expected response.
-
-        Returns:
-        --------
-
-            - BaseModel: An instance of the specified response model containing the structured
-              output from the language model.
-        """
+        """Generate a structured response from a user query."""
 
         try:
             return await self.aclient.chat.completions.create(
@@ -113,14 +96,11 @@ class GenericAPIAdapter(LLMInterface):
                     },
                 ],
                 max_retries=5,
-                api_key=self.api_key,
-                api_base=self.endpoint,
                 response_model=response_model,
                 temperature=get_llm_config().llm_temperature,
             )
         except (
             ContentFilterFinishReasonError,
-            ContentPolicyViolationError,
             InstructorRetryException,
         ) as error:
             if (
@@ -129,13 +109,13 @@ class GenericAPIAdapter(LLMInterface):
             ):
                 raise error
 
-            if not (self.fallback_model and self.fallback_api_key and self.fallback_endpoint):
+            if not self._fallback_aclient:
                 raise ContentPolicyFilterError(
                     f"The provided input contains content that is not aligned with our content policy: {text_input}"
                 ) from error
 
             try:
-                return await self.aclient.chat.completions.create(
+                return await self._fallback_aclient.chat.completions.create(
                     model=self.fallback_model,
                     messages=[
                         {
@@ -148,14 +128,11 @@ class GenericAPIAdapter(LLMInterface):
                         },
                     ],
                     max_retries=5,
-                    api_key=self.fallback_api_key,
-                    api_base=self.fallback_endpoint,
                     response_model=response_model,
                     temperature=get_llm_config().llm_temperature,
                 )
             except (
                 ContentFilterFinishReasonError,
-                ContentPolicyViolationError,
                 InstructorRetryException,
             ) as error:
                 if (

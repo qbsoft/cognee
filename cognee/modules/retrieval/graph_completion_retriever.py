@@ -90,8 +90,8 @@ async def _llm_select_documents(query: str, card_results: list) -> set:
         return set()
 
     try:
-        import litellm
         import re
+        from openai import AsyncOpenAI
         from cognee.infrastructure.llm import get_llm_config
 
         # Build document list with FULL IndexCard text (not just name+type)
@@ -147,7 +147,12 @@ async def _llm_select_documents(query: str, card_results: list) -> set:
         except Exception:
             pass
 
-        response = await litellm.acompletion(
+        client_kwargs = {"api_key": llm_config.llm_api_key or ""}
+        if llm_config.llm_endpoint:
+            client_kwargs["base_url"] = llm_config.llm_endpoint
+        client = AsyncOpenAI(**client_kwargs)
+
+        response = await client.chat.completions.create(
             model=model,
             messages=[
                 {
@@ -159,8 +164,6 @@ async def _llm_select_documents(query: str, card_results: list) -> set:
                 },
                 {"role": "user", "content": prompt},
             ],
-            api_key=llm_config.llm_api_key,
-            api_base=llm_config.llm_endpoint,
             max_tokens=20,
             temperature=0,
         )
@@ -799,7 +802,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             return []
 
         try:
-            import litellm
+            from openai import AsyncOpenAI
             import re
             from cognee.infrastructure.llm import get_llm_config
 
@@ -834,7 +837,12 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             except Exception:
                 model = llm_config.llm_model
 
-            response = await litellm.acompletion(
+            client_kwargs = {"api_key": llm_config.llm_api_key or ""}
+            if llm_config.llm_endpoint:
+                client_kwargs["base_url"] = llm_config.llm_endpoint
+            client = AsyncOpenAI(**client_kwargs)
+
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[
                     {
@@ -847,8 +855,6 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                     },
                     {"role": "user", "content": prompt},
                 ],
-                api_key=llm_config.llm_api_key,
-                api_base=llm_config.llm_endpoint,
                 max_tokens=60,
                 temperature=0,
             )

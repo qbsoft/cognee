@@ -1,5 +1,3 @@
-import litellm
-
 from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.get_llm_client import (
     get_llm_client,
 )
@@ -8,32 +6,65 @@ from cognee.shared.logging_utils import get_logger
 
 logger = get_logger()
 
+# Local model token limits — replaces litellm.model_cost
+# Only commonly used models are listed; unknown models return None.
+_MODEL_MAX_TOKENS: dict[str, int] = {
+    # OpenAI
+    "gpt-4": 8192,
+    "gpt-4-turbo": 128000,
+    "gpt-4o": 128000,
+    "gpt-4o-mini": 128000,
+    "gpt-4.1": 1047576,
+    "gpt-4.1-mini": 1047576,
+    "gpt-3.5-turbo": 16385,
+    "o1": 200000,
+    "o1-mini": 128000,
+    "o3": 200000,
+    "o3-mini": 200000,
+    "o4-mini": 200000,
+    # DashScope / Qwen
+    "qwen-plus": 131072,
+    "qwen-plus-latest": 131072,
+    "qwen-turbo": 131072,
+    "qwen-turbo-latest": 131072,
+    "qwen-max": 32768,
+    "qwen-max-latest": 32768,
+    "qwen-long": 10000000,
+    # DeepSeek
+    "deepseek-chat": 65536,
+    "deepseek-reasoner": 65536,
+    # Anthropic
+    "claude-3-opus-20240229": 200000,
+    "claude-3-sonnet-20240229": 200000,
+    "claude-3-haiku-20240307": 200000,
+    "claude-sonnet-4-20250514": 200000,
+    "claude-3-5-sonnet-20241022": 200000,
+    # Gemini
+    "gemini-pro": 32768,
+    "gemini-1.5-pro": 2097152,
+    "gemini-2.0-flash": 1048576,
+    # Mistral
+    "mistral-large-latest": 128000,
+    "mistral-small-latest": 128000,
+    # Embeddings
+    "text-embedding-3-large": 8191,
+    "text-embedding-3-small": 8191,
+    "text-embedding-v3": 8192,
+    "text-embedding-v2": 2048,
+}
+
 
 def get_max_chunk_tokens():
     """
     Calculate the maximum number of tokens allowed in a chunk.
-
-    The function determines the maximum chunk size based on the maximum token limit of the
-    embedding engine and half of the LLM maximum context token size. It ensures that the
-    chunk size does not exceed these constraints.
-
-    Returns:
-    --------
-
-        - int: The maximum number of tokens that can be included in a chunk, determined by
-          the smaller value of the embedding engine's max tokens and half of the LLM's
-          maximum tokens.
     """
     # NOTE: Import must be done in function to avoid circular import issue
     from cognee.infrastructure.databases.vector import get_vector_engine
 
-    # Calculate max chunk size based on the following formula
     embedding_engine = get_vector_engine().embedding_engine
     llm_client = get_llm_client(raise_api_key_error=False)
 
-    # We need to make sure chunk size won't take more than half of LLM max context token size
-    # but it also can't be bigger than the embedding engine max token size
-    llm_cutoff_point = llm_client.max_completion_tokens // 2  # Round down the division
+    llm_cutoff_point = llm_client.max_completion_tokens // 2
     max_chunk_tokens = min(embedding_engine.max_completion_tokens, llm_cutoff_point)
 
     return max_chunk_tokens
@@ -41,48 +72,36 @@ def get_max_chunk_tokens():
 
 def get_model_max_completion_tokens(model_name: str):
     """
-    Retrieve the maximum token limit for a specified model name if it exists.
+    Retrieve the maximum token limit for a specified model name.
 
-    Checks if the provided model name is present in the predefined model cost dictionary. If
-    found, it logs the maximum token count for that model and returns it. If the model name
-    is not recognized, it logs an informational message and returns None.
-
-    Parameters:
-    -----------
-
-        - model_name (str): Name of LLM or embedding model
-
-    Returns:
-    --------
-
-        Number of max tokens of model, or None if model is unknown
+    Checks the local model token dictionary first. Falls back to None
+    for unknown models.
     """
-    max_completion_tokens = None
+    # Try exact match
+    if model_name in _MODEL_MAX_TOKENS:
+        max_tokens = _MODEL_MAX_TOKENS[model_name]
+        logger.debug(f"Max input tokens for {model_name}: {max_tokens}")
+        return max_tokens
 
-    if model_name in litellm.model_cost:
-        max_completion_tokens = litellm.model_cost[model_name]["max_tokens"]
-        logger.debug(f"Max input tokens for {model_name}: {max_completion_tokens}")
-    else:
-        logger.debug("Model not found in LiteLLM's model_cost.")
+    # Try without provider prefix (e.g. "openai/gpt-4o" → "gpt-4o")
+    short_name = model_name.split("/")[-1] if "/" in model_name else None
+    if short_name and short_name in _MODEL_MAX_TOKENS:
+        max_tokens = _MODEL_MAX_TOKENS[short_name]
+        logger.debug(f"Max input tokens for {model_name}: {max_tokens}")
+        return max_tokens
 
-    return max_completion_tokens
+    logger.debug(f"Model {model_name} not found in local model token dict.")
+    return None
 
 
 async def test_llm_connection():
-    """
-    Establish a connection to the LLM and create a structured output.
-
-    Attempt to connect to the LLM client and uses the adapter to create a structured output
-    with a predefined text input and system prompt. Log any exceptions encountered during
-    the connection attempt and re-raise the exception for further handling.
-    """
+    """Test connection to the LLM."""
     try:
         await LLMGateway.acreate_structured_output(
             text_input="test",
             system_prompt='Respond to me with the following string: "test"',
             response_model=str,
         )
-
     except Exception as e:
         logger.error(e)
         logger.error("Connection to LLM could not be established.")
@@ -90,16 +109,9 @@ async def test_llm_connection():
 
 
 async def test_embedding_connection():
-    """
-    Test the connection to the embedding engine by embedding a sample text.
-
-    Handles exceptions that may occur during the operation, logs the error, and re-raises
-    the exception if the connection to the embedding handler cannot be established.
-    """
+    """Test the connection to the embedding engine."""
     try:
-        # NOTE: Vector engine import must be done in function to avoid circular import issue
         from cognee.infrastructure.databases.vector import get_vector_engine
-
         await get_vector_engine().embedding_engine.embed_text("test")
     except Exception as e:
         logger.error(e)

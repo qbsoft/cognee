@@ -348,10 +348,8 @@ async def _profile_document(document_text: str) -> Optional[DocumentProfile]:
     Only 1 call per document (not per chunk).
     Returns None if profiling fails (caller falls back to static prompt).
     """
-    import litellm
+    from openai import AsyncOpenAI
     from cognee.infrastructure.llm.config import get_llm_config
-
-    litellm.drop_params = True
 
     # Truncate to save tokens (0 means use full document)
     preview_chars = _get_profiling_preview_chars()
@@ -381,16 +379,18 @@ async def _profile_document(document_text: str) -> Optional[DocumentProfile]:
     logger.info(f"Document profiling: model={effective_model}, preview_chars={len(preview_text)}")
 
     try:
-        response = await litellm.acompletion(
+        client_kwargs = {"api_key": llm_config.llm_api_key or "", "timeout": 60.0}
+        if llm_config.llm_endpoint:
+            client_kwargs["base_url"] = llm_config.llm_endpoint
+        client = AsyncOpenAI(**client_kwargs)
+
+        response = await client.chat.completions.create(
             model=effective_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_input},
             ],
-            api_key=llm_config.llm_api_key,
-            api_base=llm_config.llm_endpoint,
             temperature=0.0,
-            timeout=60,
             stream=True,
         )
 
@@ -698,7 +698,7 @@ async def _call_llm_distill(
     """
     Call the LLM to generate knowledge distillations from document text.
 
-    Uses litellm streaming mode to avoid DashScope server disconnecting
+    Uses streaming mode to avoid DashScope server disconnecting
     on long-running requests (large documents can take 2+ minutes to distill,
     exceeding non-streaming connection timeouts).
 
@@ -709,10 +709,8 @@ async def _call_llm_distill(
 
     Returns a list of DistillationItem objects.
     """
-    import litellm
+    from openai import AsyncOpenAI
     from cognee.infrastructure.llm.config import get_llm_config
-
-    litellm.drop_params = True
 
     # Build prompt context based on whether profiling succeeded
     if profile:
@@ -741,16 +739,18 @@ async def _call_llm_distill(
 
     try:
         # Use streaming to keep connection alive during long distillation
-        response = await litellm.acompletion(
+        client_kwargs = {"api_key": llm_config.llm_api_key or "", "timeout": 300.0}
+        if llm_config.llm_endpoint:
+            client_kwargs["base_url"] = llm_config.llm_endpoint
+        client = AsyncOpenAI(**client_kwargs)
+
+        response = await client.chat.completions.create(
             model=effective_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_input},
             ],
-            api_key=llm_config.llm_api_key,
-            api_base=llm_config.llm_endpoint,
             temperature=llm_config.llm_temperature,
-            timeout=300,
             stream=True,
         )
 
@@ -782,10 +782,8 @@ async def _call_llm_merge(distillation_text: str) -> List[DistillationItem]:
 
     Returns a list of DistillationItem objects.
     """
-    import litellm
+    from openai import AsyncOpenAI
     from cognee.infrastructure.llm.config import get_llm_config
-
-    litellm.drop_params = True
 
     # Load merge-specific prompts
     system_prompt = read_query_prompt(
@@ -805,16 +803,18 @@ async def _call_llm_merge(distillation_text: str) -> List[DistillationItem]:
     logger.info(f"Using model: {effective_model} for merge")
 
     try:
-        response = await litellm.acompletion(
+        client_kwargs = {"api_key": llm_config.llm_api_key or "", "timeout": 300.0}
+        if llm_config.llm_endpoint:
+            client_kwargs["base_url"] = llm_config.llm_endpoint
+        client = AsyncOpenAI(**client_kwargs)
+
+        response = await client.chat.completions.create(
             model=effective_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_input},
             ],
-            api_key=llm_config.llm_api_key,
-            api_base=llm_config.llm_endpoint,
             temperature=llm_config.llm_temperature,
-            timeout=300,
             stream=True,
         )
 

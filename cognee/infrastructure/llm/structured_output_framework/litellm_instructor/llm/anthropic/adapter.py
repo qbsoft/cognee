@@ -1,14 +1,14 @@
 import logging
 from typing import Type
 from pydantic import BaseModel
-import litellm
 import instructor
 from cognee.shared.logging_utils import get_logger
+from openai import APIConnectionError, APITimeoutError
 from tenacity import (
     retry,
     stop_after_delay,
     wait_exponential_jitter,
-    retry_if_not_exception_type,
+    retry_if_exception_type,
     before_sleep_log,
 )
 
@@ -43,7 +43,7 @@ class AnthropicAdapter(LLMInterface):
     @retry(
         stop=stop_after_delay(128),
         wait=wait_exponential_jitter(2, 128),
-        retry=retry_if_not_exception_type(litellm.exceptions.NotFoundError),
+        retry=retry_if_exception_type((APIConnectionError, APITimeoutError, ConnectionError)),
         before_sleep=before_sleep_log(logger, logging.DEBUG),
         reraise=True,
     )

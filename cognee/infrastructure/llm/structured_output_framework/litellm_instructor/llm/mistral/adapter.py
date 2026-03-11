@@ -1,8 +1,7 @@
-import litellm
 import instructor
 from pydantic import BaseModel
 from typing import Type
-from litellm import JSONSchemaValidationError
+from openai import AsyncOpenAI, APIConnectionError, APITimeoutError, BadRequestError
 
 from cognee.shared.logging_utils import get_logger
 from cognee.modules.observability.get_observe import get_observe
@@ -16,7 +15,7 @@ from tenacity import (
     retry,
     stop_after_delay,
     wait_exponential_jitter,
-    retry_if_not_exception_type,
+    retry_if_exception_type,
     before_sleep_log,
 )
 
@@ -39,21 +38,23 @@ class MistralAdapter(LLMInterface):
     max_completion_tokens: int
 
     def __init__(self, api_key: str, model: str, max_completion_tokens: int, endpoint: str = None):
-        from mistralai import Mistral
-
         self.model = model
         self.max_completion_tokens = max_completion_tokens
 
-        self.aclient = instructor.from_litellm(
-            litellm.acompletion,
-            mode=instructor.Mode.MISTRAL_TOOLS,
-            api_key=get_llm_config().llm_api_key,
-        )
+        # Mistral supports OpenAI-compatible API
+        client_kwargs = {"api_key": api_key or get_llm_config().llm_api_key}
+        if endpoint:
+            client_kwargs["base_url"] = endpoint
+        else:
+            client_kwargs["base_url"] = "https://api.mistral.ai/v1"
+
+        async_client = AsyncOpenAI(**client_kwargs)
+        self.aclient = instructor.from_openai(async_client, mode=instructor.Mode.JSON)
 
     @retry(
         stop=stop_after_delay(128),
         wait=wait_exponential_jitter(2, 128),
-        retry=retry_if_not_exception_type(litellm.exceptions.NotFoundError),
+        retry=retry_if_exception_type((APIConnectionError, APITimeoutError, ConnectionError)),
         before_sleep=before_sleep_log(logger, logging.DEBUG),
         reraise=True,
     )
@@ -62,17 +63,6 @@ class MistralAdapter(LLMInterface):
     ) -> BaseModel:
         """
         Generate a response from the user query.
-
-        Parameters:
-        -----------
-            - text_input (str): The input text from the user to be processed.
-            - system_prompt (str): A prompt that sets the context for the query.
-            - response_model (Type[BaseModel]): The model to structure the response according to
-              its format.
-
-        Returns:
-        --------
-            - BaseModel: An instance of BaseModel containing the structured response.
         """
         try:
             messages = [
@@ -100,11 +90,12 @@ class MistralAdapter(LLMInterface):
                     return response_model.model_validate_json(content)
                 else:
                     raise ValueError("Failed to get valid response after retries")
-            except litellm.exceptions.BadRequestError as e:
+            except BadRequestError as e:
                 logger.error(f"Bad request error: {str(e)}")
                 raise ValueError(f"Invalid request: {str(e)}")
 
-        except JSONSchemaValidationError as e:
+        except ValueError:
+            raise
+        except Exception as e:
             logger.error(f"Schema validation failed: {str(e)}")
-            logger.debug(f"Raw response: {e.raw_response}")
             raise ValueError(f"Response failed schema validation: {str(e)}")

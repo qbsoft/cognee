@@ -2,12 +2,11 @@ import os
 import logging
 from typing import List, Optional
 from fastembed import TextEmbedding
-import litellm
 from tenacity import (
     retry,
     stop_after_delay,
     wait_exponential_jitter,
-    retry_if_not_exception_type,
+    retry_if_exception_type,
     before_sleep_log,
 )
 
@@ -18,7 +17,6 @@ from cognee.infrastructure.llm.tokenizer.TikToken import (
     TikTokenTokenizer,
 )
 
-litellm.set_verbose = False
 logger = get_logger("FastembedEmbeddingEngine")
 
 
@@ -69,7 +67,7 @@ class FastembedEmbeddingEngine(EmbeddingEngine):
     @retry(
         stop=stop_after_delay(128),
         wait=wait_exponential_jitter(2, 128),
-        retry=retry_if_not_exception_type(litellm.exceptions.NotFoundError),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, EmbeddingException)),
         before_sleep=before_sleep_log(logger, logging.DEBUG),
         reraise=True,
     )
