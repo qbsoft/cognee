@@ -20,10 +20,10 @@ interface SearchResponse {
 }
 
 const SEARCH_TYPES = [
-  { value: "GRAPH_COMPLETION", label: "\u56FE\u8C31\u8865\u5168" },
-  { value: "SUMMARIES", label: "\u6458\u8981\u641C\u7D22" },
-  { value: "INSIGHTS", label: "\u6D1E\u5BDF\u641C\u7D22" },
-  { value: "CHUNKS", label: "\u6587\u672C\u5757\u641C\u7D22" },
+  { value: "GRAPH_COMPLETION", label: "图谱补全" },
+  { value: "SUMMARIES", label: "摘要搜索" },
+  { value: "INSIGHTS", label: "洞察搜索" },
+  { value: "CHUNKS", label: "文本块搜索" },
 ];
 
 export default function SearchTab() {
@@ -69,7 +69,7 @@ export default function SearchTab() {
         }
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "\u641C\u7D22\u8BF7\u6C42\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5";
+          err instanceof Error ? err.message : "搜索请求失败，请稍后重试";
         setError(message);
       } finally {
         setIsLoading(false);
@@ -98,7 +98,7 @@ export default function SearchTab() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="\u8F93\u5165\u641C\u7D22\u95EE\u9898..."
+                placeholder="输入搜索问题..."
                 className="w-full h-12 pl-11 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow"
               />
             </div>
@@ -121,10 +121,10 @@ export default function SearchTab() {
               {isLoading ? (
                 <>
                   <LoadingIndicator />
-                  <span>\u641C\u7D22\u4E2D...</span>
+                  <span>搜索中...</span>
                 </>
               ) : (
-                <span>\u641C\u7D22</span>
+                <span>搜索</span>
               )}
             </button>
           </div>
@@ -140,7 +140,7 @@ export default function SearchTab() {
         {/* Answer Display */}
         {answer && (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">\u56DE\u7B54</h3>
+            <h3 className="text-sm font-medium text-gray-500 mb-2">回答</h3>
             <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{answer}</p>
           </div>
         )}
@@ -149,7 +149,7 @@ export default function SearchTab() {
         {results.length > 0 && (
           <div className="flex flex-col gap-3">
             <h3 className="text-sm font-medium text-gray-500">
-              \u68C0\u7D22\u7ED3\u679C ({results.length})
+              检索结果 ({results.length})
             </h3>
             {results.map((result, index) => (
               <div
@@ -184,8 +184,8 @@ export default function SearchTab() {
             <SearchIcon width={64} height={64} color="#D1D5DB" />
             <p className="mt-4 text-sm">
               {hasSearched
-                ? "\u672A\u627E\u5230\u76F8\u5173\u7ED3\u679C"
-                : "\u8F93\u5165\u95EE\u9898\u5F00\u59CB\u641C\u7D22\u77E5\u8BC6\u5E93"}
+                ? "未找到相关结果"
+                : "输入问题开始搜索知识库"}
             </p>
           </div>
         )}
@@ -194,7 +194,7 @@ export default function SearchTab() {
         {isLoading && !answer && results.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <LoadingIndicator />
-            <p className="mt-4 text-sm">\u6B63\u5728\u641C\u7D22...</p>
+            <p className="mt-4 text-sm">正在搜索...</p>
           </div>
         )}
       </div>
