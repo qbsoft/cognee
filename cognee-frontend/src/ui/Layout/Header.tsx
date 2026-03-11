@@ -94,6 +94,9 @@ export default function Header({ user }: HeaderProps) {
             <StatusDot className="mr-2" isActive={isMCPConnected} />
             {isMCPConnected ? t("instances.mcpConnected") : t("instances.mcpDisconnected")}
           </Link>
+          <Link href="/settings/models" className="!text-indigo-600 pl-4 pr-4">
+            模型配置
+          </Link>
           {shouldShowPermissionsLink() && (
             <Link href={getPermissionsLink()} className="!text-indigo-600 pl-4 pr-4">
               权限管理

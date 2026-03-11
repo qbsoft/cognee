@@ -39,6 +39,7 @@ from cognee.api.v1.users.routers import (
     get_users_router,
     get_visualize_router,
 )
+from cognee.api.v1.model_providers.routers.model_provider_router import get_model_provider_router
 from cognee.modules.users.methods.get_authenticated_user import REQUIRE_AUTHENTICATION
 
 logger = get_logger()
@@ -329,6 +330,12 @@ app.include_router(
     get_api_keys_router(),
     prefix="/api/v1/api-keys",
     tags=["api-keys"],
+)
+
+app.include_router(
+    get_model_provider_router(),
+    prefix="/api/v1/model-providers",
+    tags=["model-providers"],
 )
 
 

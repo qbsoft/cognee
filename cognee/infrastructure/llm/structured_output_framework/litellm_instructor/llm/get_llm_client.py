@@ -34,7 +34,50 @@ class LLMProvider(Enum):
     MISTRAL = "mistral"
 
 
-def get_llm_client(raise_api_key_error: bool = True, model_override: str = None):
+async def get_llm_client_for_user(user_id, task_type: str = "chat"):
+    """Get an LLM client resolved from user's DB config.
+
+    Falls back to .env config if no user config exists.
+    """
+    from cognee.infrastructure.llm.providers.service import ModelProviderService
+
+    resolved = await ModelProviderService.resolve_model_config(user_id, task_type)
+
+    if resolved.source == "user" and resolved.api_key:
+        # Map provider_id to LLMProvider + create adapter with user credentials
+        provider_map = {
+            "dashscope": "custom",
+            "deepseek": "custom",
+            "zhipu": "custom",
+            "moonshot": "custom",
+            "baichuan": "custom",
+            "minimax": "custom",
+            "siliconflow": "custom",
+            "openai": "openai",
+            "anthropic": "anthropic",
+            "google": "gemini",
+            "mistral": "mistral",
+            "ollama": "ollama",
+            "vllm": "custom",
+            "lm-studio": "custom",
+        }
+        llm_provider = provider_map.get(resolved.provider_id, "custom")
+        # Temporarily override config and create client
+        return get_llm_client(
+            raise_api_key_error=False,
+            model_override=resolved.model_id,
+            api_key_override=resolved.api_key,
+            endpoint_override=resolved.base_url,
+            provider_override=llm_provider,
+        )
+
+    # Fall back to default
+    return get_llm_client()
+
+
+def get_llm_client(raise_api_key_error: bool = True, model_override: str = None,
+                   api_key_override: str = None, endpoint_override: str = None,
+                   provider_override: str = None):
     """
     Get the LLM client based on the configuration using Enums.
 
@@ -60,10 +103,12 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
     """
     llm_config = get_llm_config()
 
-    # Compute effective model: use override if provided, otherwise use config default
+    # Compute effective values: use overrides if provided, otherwise use config defaults
     effective_model = model_override if model_override else llm_config.llm_model
+    effective_api_key = api_key_override if api_key_override else llm_config.llm_api_key
+    effective_endpoint = endpoint_override if endpoint_override else llm_config.llm_endpoint
 
-    provider = LLMProvider(llm_config.llm_provider)
+    provider = LLMProvider(provider_override) if provider_override else LLMProvider(llm_config.llm_provider)
 
     # Check if max_token value is defined in liteLLM for given model
     # if not use value from cognee configuration
@@ -79,7 +124,7 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
     )
 
     if provider == LLMProvider.OPENAI:
-        if llm_config.llm_api_key is None and raise_api_key_error:
+        if effective_api_key is None and raise_api_key_error:
             raise LLMAPIKeyNotSetError()
 
         from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.openai.adapter import (
@@ -87,8 +132,8 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
         return OpenAIAdapter(
-            api_key=llm_config.llm_api_key,
-            endpoint=llm_config.llm_endpoint,
+            api_key=effective_api_key,
+            endpoint=effective_endpoint,
             api_version=llm_config.llm_api_version,
             model=effective_model,
             transcription_model=llm_config.transcription_model,
@@ -100,7 +145,7 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
     elif provider == LLMProvider.OLLAMA:
-        if llm_config.llm_api_key is None and raise_api_key_error:
+        if effective_api_key is None and raise_api_key_error:
             raise LLMAPIKeyNotSetError()
 
         from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.generic_llm_api.adapter import (
@@ -108,8 +153,8 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
         return OllamaAPIAdapter(
-            llm_config.llm_endpoint,
-            llm_config.llm_api_key,
+            effective_endpoint,
+            effective_api_key,
             effective_model,
             "Ollama",
             max_completion_tokens=max_completion_tokens,
@@ -125,7 +170,7 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
     elif provider == LLMProvider.CUSTOM:
-        if llm_config.llm_api_key is None and raise_api_key_error:
+        if effective_api_key is None and raise_api_key_error:
             raise LLMAPIKeyNotSetError()
 
         from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.generic_llm_api.adapter import (
@@ -133,8 +178,8 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
         return GenericAPIAdapter(
-            llm_config.llm_endpoint,
-            llm_config.llm_api_key,
+            effective_endpoint,
+            effective_api_key,
             effective_model,
             "Custom",
             max_completion_tokens=max_completion_tokens,
@@ -144,7 +189,7 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
     elif provider == LLMProvider.GEMINI:
-        if llm_config.llm_api_key is None and raise_api_key_error:
+        if effective_api_key is None and raise_api_key_error:
             raise LLMAPIKeyNotSetError()
 
         from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.gemini.adapter import (
@@ -152,15 +197,15 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
         return GeminiAdapter(
-            api_key=llm_config.llm_api_key,
+            api_key=effective_api_key,
             model=effective_model,
             max_completion_tokens=max_completion_tokens,
-            endpoint=llm_config.llm_endpoint,
+            endpoint=effective_endpoint,
             api_version=llm_config.llm_api_version,
         )
 
     elif provider == LLMProvider.MISTRAL:
-        if llm_config.llm_api_key is None:
+        if effective_api_key is None:
             raise LLMAPIKeyNotSetError()
 
         from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.mistral.adapter import (
@@ -168,25 +213,10 @@ def get_llm_client(raise_api_key_error: bool = True, model_override: str = None)
         )
 
         return MistralAdapter(
-            api_key=llm_config.llm_api_key,
+            api_key=effective_api_key,
             model=effective_model,
             max_completion_tokens=max_completion_tokens,
-            endpoint=llm_config.llm_endpoint,
-        )
-
-    elif provider == LLMProvider.MISTRAL:
-        if llm_config.llm_api_key is None:
-            raise LLMAPIKeyNotSetError()
-
-        from cognee.infrastructure.llm.structured_output_framework.litellm_instructor.llm.mistral.adapter import (
-            MistralAdapter,
-        )
-
-        return MistralAdapter(
-            api_key=llm_config.llm_api_key,
-            model=effective_model,
-            max_completion_tokens=max_completion_tokens,
-            endpoint=llm_config.llm_endpoint,
+            endpoint=effective_endpoint,
         )
 
     else:
