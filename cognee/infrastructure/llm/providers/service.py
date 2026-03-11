@@ -119,6 +119,16 @@ class ModelProviderService:
 
             await session.commit()
             await session.refresh(config)
+
+            # Invalidate embedding engine cache in case provider is used for embedding
+            try:
+                from cognee.infrastructure.databases.vector.embeddings.get_embedding_engine import (
+                    clear_embedding_engine_cache,
+                )
+                clear_embedding_engine_cache()
+            except Exception:
+                pass
+
             return config
 
     @staticmethod
