@@ -25,6 +25,9 @@ i18n
         interpolation: {
             escapeValue: false, // React 已经安全处理了
         },
+        // 同步初始化，避免 SSR hydration 不匹配
+        // （否则 Next.js 预渲染时返回 key 字符串，客户端水合后才显示翻译）
+        initImmediate: false,
     });
 
 export default i18n;
