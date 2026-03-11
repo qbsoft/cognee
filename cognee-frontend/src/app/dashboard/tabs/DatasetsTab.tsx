@@ -9,6 +9,7 @@ import AddDataToCognee from "../AddDataToCognee";
 interface DatasetsTabProps {
   datasets: Dataset[];
   refreshDatasets: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getDatasetData?: (datasetId: string) => Promise<any>;
 }
 
@@ -31,6 +32,7 @@ function getDatasetStatus(dataset: Dataset): StatusInfo {
   let allCompleted = true;
 
   for (const file of files) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ps = (file as any).pipeline_status;
     if (!ps) {
       allCompleted = false;
@@ -88,7 +90,11 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
             className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors"
           />
         </div>
-        <AddDataToCognee />
+        <AddDataToCognee
+          datasets={datasets}
+          refreshDatasets={refreshDatasets}
+          getDatasetData={getDatasetData}
+        />
       </div>
 
       {/* Card grid or empty state */}

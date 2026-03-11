@@ -21,8 +21,8 @@ interface HeaderProps {
     tenant_id?: string | null;
     roles?: string[];
   };
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
 export default function Header({ user, activeTab, onTabChange }: HeaderProps) {
@@ -34,25 +34,29 @@ export default function Header({ user, activeTab, onTabChange }: HeaderProps) {
         <span className="text-lg font-semibold text-gray-900">Cognee</span>
       </div>
 
-      {/* Center: Tab navigation */}
-      <nav className="flex flex-row gap-1 items-center">
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Center: Tab navigation (only shown when activeTab/onTabChange provided) */}
+      {onTabChange ? (
+        <nav className="flex flex-row gap-1 items-center">
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => onTabChange(tab.id)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-indigo-50 text-indigo-700"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      ) : (
+        <div />
+      )}
 
       {/* Right: Settings + Avatar */}
       <div className="flex flex-row items-center gap-2">

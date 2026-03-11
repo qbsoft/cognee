@@ -30,12 +30,14 @@ export default function Dashboard({ accessToken }: DashboardProps) {
   // Datasets logic (shared with DatasetsTab)
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const refreshDatasetsRef = useRef(() => {});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getDatasetDataRef = useRef<((datasetId: string) => Promise<any>) | undefined>();
 
   const handleDatasetsChange = useCallback(
     (payload: {
       datasets: Dataset[];
       refreshDatasets: () => void;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       getDatasetData: (datasetId: string) => Promise<any>;
     }) => {
       const { datasets, refreshDatasets, getDatasetData } = payload;
