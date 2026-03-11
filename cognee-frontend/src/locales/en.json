@@ -8,7 +8,9 @@
         "add": "add",
         "delete": "delete",
         "edit": "edit",
-        "save": "save"
+        "save": "save",
+        "copy": "Copy",
+        "copied": "Copied"
     },
     "navigation": {
         "addData": "Add data to cognee",
@@ -65,6 +67,62 @@
             "title": "Welcome to Sign Up",
             "subtitle": "Start using Cognee",
             "loginLink": "Already have an account? Go to Login ->"
+        }
+    },
+    "dashboard": {
+        "datasets": {
+            "searchPlaceholder": "Search datasets...",
+            "empty": "No datasets yet, please upload data first",
+            "noMatch": "No matching datasets",
+            "fileCount_one": "{{count}} file",
+            "fileCount_other": "{{count}} files",
+            "queryLink": "Query \u2192",
+            "status": {
+                "empty": "Empty",
+                "failed": "Has failures",
+                "inProgress": "Processing",
+                "ready": "Ready",
+                "pending": "Pending"
+            }
+        },
+        "search": {
+            "placeholder": "Enter search query...",
+            "searching": "Searching...",
+            "searchButton": "Search",
+            "answerLabel": "Answer",
+            "resultsLabel": "Results ({{count}})",
+            "emptyHint": "Enter a question to search the knowledge base",
+            "noResults": "No relevant results found",
+            "errorFallback": "Search request failed, please try again",
+            "types": {
+                "GRAPH_COMPLETION": "Graph Completion",
+                "SUMMARIES": "Summary Search",
+                "INSIGHTS": "Insights Search",
+                "CHUNKS": "Chunk Search"
+            }
+        },
+        "graph": {
+            "nodes": "Nodes",
+            "edges": "Edges"
+        },
+        "api": {
+            "serviceStatus": "Service Status",
+            "backendService": "Backend Service",
+            "mcpService": "MCP Service",
+            "swaggerTitle": "Swagger API Documentation",
+            "swaggerDescription": "View the complete interactive API docs with online testing",
+            "openSwagger": "Open Swagger UI \u2192",
+            "coreEndpoints": "Core API Endpoints",
+            "pythonSdk": "Python SDK Quick Start",
+            "endpoints": {
+                "add": "Upload files or text data to a dataset",
+                "cognify": "Trigger knowledge graph building pipeline",
+                "search": "Search the knowledge base",
+                "datasets": "Get all datasets list",
+                "datasetData": "Get files in a dataset",
+                "delete": "Delete a dataset or data",
+                "settings": "Get current system configuration"
+            }
         }
     }
 }

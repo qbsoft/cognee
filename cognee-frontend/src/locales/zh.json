@@ -8,7 +8,9 @@
         "add": "添加",
         "delete": "删除",
         "edit": "编辑",
-        "save": "保存"
+        "save": "保存",
+        "copy": "复制",
+        "copied": "已复制"
     },
     "navigation": {
         "addData": "添加数据到 cognee",
@@ -65,6 +67,62 @@
             "title": "欢迎注册",
             "subtitle": "开始使用 Cognee",
             "loginLink": "已有账号？去登录 ->"
+        }
+    },
+    "dashboard": {
+        "datasets": {
+            "searchPlaceholder": "搜索数据集...",
+            "empty": "暂无数据集，请先上传数据",
+            "noMatch": "没有匹配的数据集",
+            "fileCount_one": "{{count}} 个文件",
+            "fileCount_other": "{{count}} 个文件",
+            "queryLink": "检索查询 →",
+            "status": {
+                "empty": "空",
+                "failed": "有失败",
+                "inProgress": "处理中",
+                "ready": "已就绪",
+                "pending": "待处理"
+            }
+        },
+        "search": {
+            "placeholder": "输入搜索问题...",
+            "searching": "搜索中...",
+            "searchButton": "搜索",
+            "answerLabel": "回答",
+            "resultsLabel": "检索结果 ({{count}})",
+            "emptyHint": "输入问题开始搜索知识库",
+            "noResults": "未找到相关结果",
+            "errorFallback": "搜索请求失败，请稍后重试",
+            "types": {
+                "GRAPH_COMPLETION": "图谱补全",
+                "SUMMARIES": "摘要搜索",
+                "INSIGHTS": "洞察搜索",
+                "CHUNKS": "文本块搜索"
+            }
+        },
+        "graph": {
+            "nodes": "节点",
+            "edges": "连接"
+        },
+        "api": {
+            "serviceStatus": "服务状态",
+            "backendService": "后端服务",
+            "mcpService": "MCP 服务",
+            "swaggerTitle": "Swagger API 文档",
+            "swaggerDescription": "查看完整的交互式 API 文档，支持在线测试接口",
+            "openSwagger": "打开 Swagger UI →",
+            "coreEndpoints": "核心 API 接口",
+            "pythonSdk": "Python SDK 快速开始",
+            "endpoints": {
+                "add": "上传文件或文本数据到数据集",
+                "cognify": "触发知识图谱构建管道",
+                "search": "搜索知识库",
+                "datasets": "获取所有数据集列表",
+                "datasetData": "获取数据集中的文件列表",
+                "delete": "删除数据集或数据",
+                "settings": "获取当前系统配置"
+            }
         }
     }
 }

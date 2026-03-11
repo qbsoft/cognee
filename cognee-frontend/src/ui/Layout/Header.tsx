@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useTranslation } from "react-i18next";
 import { CogneeIcon } from "../Icons";
 import SettingsDropdown from "./SettingsDropdown";
 
 const TABS = [
-  { id: "datasets", label: "\u6570\u636e\u96c6" },
-  { id: "graph", label: "\u77e5\u8bc6\u56fe\u8c31" },
-  { id: "search", label: "\u641c\u7d22" },
-  { id: "api", label: "API" },
+  { id: "datasets", tKey: "tabs.datasets" },
+  { id: "graph", tKey: "tabs.graph" },
+  { id: "search", tKey: "tabs.search" },
+  { id: "api", tKey: "tabs.api" },
 ];
 
 interface HeaderProps {
@@ -26,6 +27,8 @@ interface HeaderProps {
 }
 
 export default function Header({ user, activeTab, onTabChange }: HeaderProps) {
+  const { t } = useTranslation();
+
   return (
     <header className="relative flex flex-row h-14 min-h-14 px-5 items-center justify-between w-full max-w-[1920px] mx-auto border-b border-gray-200">
       {/* Left: Logo */}
@@ -49,7 +52,7 @@ export default function Header({ user, activeTab, onTabChange }: HeaderProps) {
                     : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
                 }`}
               >
-                {tab.label}
+                {t(tab.tKey)}
               </button>
             );
           })}

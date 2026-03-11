@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import apiFetch from "@/utils/fetch";
 import { SearchIcon } from "@/ui/Icons";
@@ -19,16 +20,17 @@ interface SearchResponse {
   results?: SearchResult[];
 }
 
-const SEARCH_TYPES = [
-  { value: "GRAPH_COMPLETION", label: "图谱补全" },
-  { value: "SUMMARIES", label: "摘要搜索" },
-  { value: "INSIGHTS", label: "洞察搜索" },
-  { value: "CHUNKS", label: "文本块搜索" },
+const SEARCH_TYPE_KEYS = [
+  { value: "GRAPH_COMPLETION", tKey: "dashboard.search.types.GRAPH_COMPLETION" },
+  { value: "SUMMARIES", tKey: "dashboard.search.types.SUMMARIES" },
+  { value: "INSIGHTS", tKey: "dashboard.search.types.INSIGHTS" },
+  { value: "CHUNKS", tKey: "dashboard.search.types.CHUNKS" },
 ];
 
 export default function SearchTab() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
-  const [searchType, setSearchType] = useState(SEARCH_TYPES[0].value);
+  const [searchType, setSearchType] = useState(SEARCH_TYPE_KEYS[0].value);
   const [answer, setAnswer] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -69,13 +71,13 @@ export default function SearchTab() {
         }
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "搜索请求失败，请稍后重试";
+          err instanceof Error ? err.message : t("dashboard.search.errorFallback");
         setError(message);
       } finally {
         setIsLoading(false);
       }
     },
-    [query, searchType],
+    [query, searchType, t],
   );
 
   const formatScore = (score: number | undefined) => {
@@ -98,7 +100,7 @@ export default function SearchTab() {
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="输入搜索问题..."
+                placeholder={t("dashboard.search.placeholder")}
                 className="w-full h-12 pl-11 pr-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow"
               />
             </div>
@@ -107,9 +109,9 @@ export default function SearchTab() {
               onChange={(e) => setSearchType(e.target.value)}
               className="h-12 px-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
-              {SEARCH_TYPES.map((opt) => (
+              {SEARCH_TYPE_KEYS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.tKey)}
                 </option>
               ))}
             </select>
@@ -121,10 +123,10 @@ export default function SearchTab() {
               {isLoading ? (
                 <>
                   <LoadingIndicator />
-                  <span>搜索中...</span>
+                  <span>{t("dashboard.search.searching")}</span>
                 </>
               ) : (
-                <span>搜索</span>
+                <span>{t("dashboard.search.searchButton")}</span>
               )}
             </button>
           </div>
@@ -140,7 +142,7 @@ export default function SearchTab() {
         {/* Answer Display */}
         {answer && (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">回答</h3>
+            <h3 className="text-sm font-medium text-gray-500 mb-2">{t("dashboard.search.answerLabel")}</h3>
             <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{answer}</p>
           </div>
         )}
@@ -149,7 +151,7 @@ export default function SearchTab() {
         {results.length > 0 && (
           <div className="flex flex-col gap-3">
             <h3 className="text-sm font-medium text-gray-500">
-              检索结果 ({results.length})
+              {t("dashboard.search.resultsLabel", { count: results.length })}
             </h3>
             {results.map((result, index) => (
               <div
@@ -184,8 +186,8 @@ export default function SearchTab() {
             <SearchIcon width={64} height={64} color="#D1D5DB" />
             <p className="mt-4 text-sm">
               {hasSearched
-                ? "未找到相关结果"
-                : "输入问题开始搜索知识库"}
+                ? t("dashboard.search.noResults")
+                : t("dashboard.search.emptyHint")}
             </p>
           </div>
         )}
@@ -194,7 +196,7 @@ export default function SearchTab() {
         {isLoading && !answer && results.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <LoadingIndicator />
-            <p className="mt-4 text-sm">正在搜索...</p>
+            <p className="mt-4 text-sm">{t("dashboard.search.searching")}</p>
           </div>
         )}
       </div>
