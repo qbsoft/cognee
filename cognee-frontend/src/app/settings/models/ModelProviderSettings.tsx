@@ -499,7 +499,10 @@ export default function ModelProviderSettings() {
 
   const fetchProviders = useCallback(async () => {
     try {
-      const resp = await fetch("/v1/model-providers");
+      const resp = await Promise.race([
+        fetch("/v1/model-providers"),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+      ]);
       const data = await resp.json();
       setCategories(data.categories || {});
     } catch (e) {
@@ -509,7 +512,10 @@ export default function ModelProviderSettings() {
 
   const fetchDefaults = useCallback(async () => {
     try {
-      const resp = await fetch("/v1/model-providers/user/defaults");
+      const resp = await Promise.race([
+        fetch("/v1/model-providers/user/defaults"),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+      ]);
       const data = await resp.json();
       setDefaults(data.defaults || {});
     } catch (e) {
@@ -518,7 +524,12 @@ export default function ModelProviderSettings() {
   }, []);
 
   useEffect(() => {
-    Promise.all([fetchProviders(), fetchDefaults()]).finally(() => setLoading(false));
+    const timeout = setTimeout(() => setLoading(false), 10000);
+    Promise.all([fetchProviders(), fetchDefaults()]).finally(() => {
+      clearTimeout(timeout);
+      setLoading(false);
+    });
+    return () => clearTimeout(timeout);
   }, [fetchProviders, fetchDefaults]);
 
   const handleTestProvider = async (provider: Provider) => {
