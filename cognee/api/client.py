@@ -43,6 +43,8 @@ from cognee.api.v1.users.routers import (
     get_visualize_router,
 )
 from cognee.api.v1.model_providers.routers.model_provider_router import get_model_provider_router
+from cognee.api.v1.sharing.routers import get_sharing_router
+from cognee.api.v1.chat import get_chat_router
 from cognee.modules.users.methods.get_authenticated_user import REQUIRE_AUTHENTICATION
 
 logger = get_logger()
@@ -342,6 +344,18 @@ app.include_router(
     get_model_provider_router(),
     prefix="/api/v1/model-providers",
     tags=["model-providers"],
+)
+
+app.include_router(
+    get_sharing_router(),
+    prefix="/api/v1",
+    tags=["sharing"],
+)
+
+app.include_router(
+    get_chat_router(),
+    prefix="/api/v1/chat",
+    tags=["chat"],
 )
 
 
