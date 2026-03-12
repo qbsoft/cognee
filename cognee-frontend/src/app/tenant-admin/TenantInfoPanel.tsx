@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { fetch } from "@/utils";
 
 interface TenantInfo {
@@ -17,6 +18,7 @@ export default function TenantInfoPanel() {
   const [loading, setLoading] = useState(true);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchTenantInfo();
@@ -25,23 +27,22 @@ export default function TenantInfoPanel() {
   const fetchTenantInfo = async () => {
     try {
       setLoading(true);
-      // 获取当前用户的租户信息
       const response = await fetch("/v1/permissions/my-tenant");
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (!data.tenant) {
-        throw new Error("返回数据中没有租户信息");
+        throw new Error("No tenant info in response");
       }
-      
+
       setTenantInfo(data.tenant);
     } catch (error) {
-      console.error("获取租户信息失败:", error);
-      alert(`获取租户信息失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      console.error("Failed to get tenant info:", error);
+      alert(`Failed to get tenant info: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -49,21 +50,21 @@ export default function TenantInfoPanel() {
 
   const handleGenerateInvite = async () => {
     if (!tenantInfo) return;
-    
+
     try {
       const response = await fetch(`/v1/permissions/tenants/${tenantInfo.id}/invite`, {
         method: "POST",
       });
       const data = await response.json();
-      
+
       if (data.invite_url) {
         const fullUrl = `${window.location.origin}${data.invite_url}`;
         setInviteUrl(fullUrl);
-        alert(`邀请链接生成成功！\n\n有效期至：${new Date(data.expires_at).toLocaleString("zh-CN")}`);
+        alert(`Invite link generated!\n\nExpires at: ${new Date(data.expires_at).toLocaleString()}`);
       }
     } catch (error) {
-      console.error("生成邀请链接失败:", error);
-      alert("生成邀请链接失败");
+      console.error("Failed to generate invite link:", error);
+      alert("Failed to generate invite link");
     }
   };
 
@@ -78,34 +79,32 @@ export default function TenantInfoPanel() {
         setTimeout(() => setCopiedUrl(false), 2000);
       }
     } catch (error) {
-      console.error("复制失败:", error);
+      console.error("Copy failed:", error);
     }
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-gray-500">加载中...</div>;
+    return <div className="text-center py-8 text-gray-500">{t("tenantAdmin.info.loading")}</div>;
   }
 
   if (!tenantInfo) {
-    return <div className="text-center py-8 text-red-500">无法获取租户信息</div>;
+    return <div className="text-center py-8 text-red-500">{t("tenantAdmin.info.error")}</div>;
   }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-gray-900">租户信息（只读）</h2>
+      <h2 className="text-xl font-semibold text-gray-900">{t("tenantAdmin.info.title")}</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 租户名称 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">租户名称</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t("tenantAdmin.info.tenantName")}</label>
           <div className="px-4 py-3 bg-gray-50 rounded-md text-gray-900">
             {tenantInfo.name}
           </div>
         </div>
 
-        {/* 租户编码 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">租户编码</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t("tenantAdmin.info.tenantCode")}</label>
           <div className="flex items-center gap-2">
             <code className="flex-1 px-4 py-3 bg-indigo-50 text-indigo-700 rounded-md font-mono tracking-wider">
               {tenantInfo.tenant_code}
@@ -114,52 +113,49 @@ export default function TenantInfoPanel() {
               onClick={() => handleCopy(tenantInfo.tenant_code, "code")}
               className="px-4 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
-              {copiedCode ? "✓ 已复制" : "复制"}
+              {copiedCode ? t("tenantAdmin.info.copied") : t("common.copy")}
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-1">用户可通过此编码注册加入租户</p>
+          <p className="text-xs text-gray-500 mt-1">{t("tenantAdmin.info.tenantCodeHint")}</p>
         </div>
 
-        {/* 创建时间 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">创建时间</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t("tenantAdmin.info.createdAt")}</label>
           <div className="px-4 py-3 bg-gray-50 rounded-md text-gray-900">
-            {new Date(tenantInfo.created_at).toLocaleString("zh-CN")}
+            {new Date(tenantInfo.created_at).toLocaleString()}
           </div>
         </div>
 
-        {/* 有效期 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">有效期</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t("tenantAdmin.info.validity")}</label>
           <div className={`px-4 py-3 rounded-md font-medium ${
             !tenantInfo.expires_at ? "bg-green-50 text-green-700" :
             new Date(tenantInfo.expires_at) < new Date() ? "bg-red-50 text-red-700" :
             "bg-gray-50 text-gray-900"
           }`}>
-            {tenantInfo.expires_at 
-              ? `${new Date(tenantInfo.expires_at).toLocaleDateString("zh-CN")}${
-                  new Date(tenantInfo.expires_at) < new Date() ? " (已过期)" : ""
+            {tenantInfo.expires_at
+              ? `${new Date(tenantInfo.expires_at).toLocaleDateString()}${
+                  new Date(tenantInfo.expires_at) < new Date() ? ` ${t("tenantAdmin.info.expired")}` : ""
                 }`
-              : "无限期"
+              : t("tenantAdmin.info.unlimited")
             }
           </div>
         </div>
       </div>
 
-      {/* 邀请链接 */}
       <div className="pt-6 border-t border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">注册邀请链接</h3>
-        
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t("tenantAdmin.info.inviteTitle")}</h3>
+
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <button
               onClick={handleGenerateInvite}
               className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
             >
-              生成新的邀请链接
+              {t("tenantAdmin.info.generateInvite")}
             </button>
             {inviteUrl && (
-              <span className="text-sm text-green-600">✓ 链接已生成</span>
+              <span className="text-sm text-green-600">{t("tenantAdmin.info.linkGenerated")}</span>
             )}
           </div>
 
@@ -175,13 +171,13 @@ export default function TenantInfoPanel() {
                 onClick={() => handleCopy(inviteUrl, "url")}
                 className="px-4 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
               >
-                {copiedUrl ? "✓ 已复制" : "复制链接"}
+                {copiedUrl ? t("tenantAdmin.info.copied") : t("tenantAdmin.info.copyLink")}
               </button>
             </div>
           )}
 
           <p className="text-sm text-gray-500">
-            邀请链接有效期为 24 小时，用户通过链接注册将自动加入本租户。
+            {t("tenantAdmin.info.inviteNote")}
           </p>
         </div>
       </div>

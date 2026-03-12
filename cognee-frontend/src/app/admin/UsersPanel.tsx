@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { CTAButton, Input } from "@/ui/elements";
 import { fetch } from "@/utils";
+import { useTranslation } from "react-i18next";
 
 interface User {
   id: string;
@@ -13,6 +14,7 @@ interface User {
 }
 
 export default function UsersPanel() {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -53,8 +55,8 @@ export default function UsersPanel() {
       setNewUserPassword("");
       await fetchUsers();
     } catch (error) {
-      console.error("创建用户失败:", error);
-      alert("创建用户失败，请检查邮箱是否已存在");
+      console.error("Create user failed:", error);
+      alert(t("admin.users.createError"));
     } finally {
       setIsCreating(false);
     }
@@ -63,17 +65,17 @@ export default function UsersPanel() {
   return (
     <div className="space-y-6">
       <div className="bg-gray-50 p-4 rounded-lg">
-        <h3 className="text-lg font-semibold mb-4">创建新用户</h3>
+        <h3 className="text-lg font-semibold mb-4">{t("admin.users.createTitle")}</h3>
         <div className="space-y-3">
           <Input
             type="email"
-            placeholder="邮箱地址"
+            placeholder={t("admin.users.emailPlaceholder")}
             value={newUserEmail}
             onChange={(e) => setNewUserEmail(e.target.value)}
           />
           <Input
             type="password"
-            placeholder="密码"
+            placeholder={t("admin.users.passwordPlaceholder")}
             value={newUserPassword}
             onChange={(e) => setNewUserPassword(e.target.value)}
           />
@@ -82,19 +84,19 @@ export default function UsersPanel() {
             disabled={isCreating || !newUserEmail.trim() || !newUserPassword.trim()}
             className="w-full"
           >
-            {isCreating ? "创建中..." : "创建用户"}
+            {isCreating ? t("admin.users.creating") : t("admin.users.createButton")}
           </CTAButton>
         </div>
         <p className="text-sm text-gray-600 mt-2">
-          新用户创建后需要手动分配到租户和角色
+          {t("admin.users.userNote")}
         </p>
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-4">现有用户</h3>
+        <h3 className="text-lg font-semibold mb-4">{t("admin.users.existingTitle")}</h3>
         {users.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            正在加载用户列表...
+            {t("admin.users.loadingUsers")}
           </div>
         ) : (
           <div className="space-y-2">
@@ -108,7 +110,7 @@ export default function UsersPanel() {
                     <div className="font-semibold">{user.email}</div>
                     <div className="text-sm text-gray-500">
                       ID: {user.id}
-                      {user.tenant_id && ` | 租户ID: ${user.tenant_id}`}
+                      {user.tenant_id && ` | ${t("admin.users.tenantId")} ${user.tenant_id}`}
                     </div>
                   </div>
                   <div className="flex flex-row gap-2">
@@ -119,7 +121,7 @@ export default function UsersPanel() {
                           : "bg-red-100 text-red-800"
                       }`}
                     >
-                      {user.is_active ? "激活" : "未激活"}
+                      {user.is_active ? t("admin.users.active") : t("admin.users.inactive")}
                     </span>
                     <span
                       className={`px-2 py-1 rounded text-xs ${
@@ -128,7 +130,7 @@ export default function UsersPanel() {
                           : "bg-gray-100 text-gray-800"
                       }`}
                     >
-                      {user.is_verified ? "已验证" : "未验证"}
+                      {user.is_verified ? t("admin.users.verified") : t("admin.users.unverified")}
                     </span>
                   </div>
                 </div>

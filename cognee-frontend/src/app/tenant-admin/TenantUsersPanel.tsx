@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
 import { fetch } from "@/utils";
 
@@ -25,6 +26,7 @@ export default function TenantUsersPanel() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchUsers();
@@ -38,8 +40,8 @@ export default function TenantUsersPanel() {
       const data = await response.json();
       setUsers(data.users || []);
     } catch (error) {
-      console.error("获取用户列表失败:", error);
-      toast.error("获取用户列表失败，请稍后重试");
+      console.error("Failed to get users:", error);
+      toast.error(t("tenantAdmin.users.title") + " - error");
     } finally {
       setLoading(false);
     }
@@ -51,8 +53,7 @@ export default function TenantUsersPanel() {
       const data = await response.json();
       setRoles(data.roles || []);
     } catch (error) {
-      console.error("获取角色列表失败:", error);
-      toast.error("获取角色列表失败");
+      console.error("Failed to get roles:", error);
     }
   };
 
@@ -73,15 +74,15 @@ export default function TenantUsersPanel() {
       });
 
       if (response.ok) {
-        toast.success("角色分配成功！");
+        toast.success(t("tenantAdmin.users.assignRoles") + " OK");
         setShowRoleDialog(false);
         await fetchUsers();
       } else {
-        toast.error("角色分配失败，请检查权限");
+        toast.error("Role assignment failed");
       }
     } catch (error) {
-      console.error("保存角色失败:", error);
-      toast.error("保存角色失败，请稍后重试");
+      console.error("Save roles failed:", error);
+      toast.error("Save roles failed");
     }
   };
 
@@ -94,8 +95,8 @@ export default function TenantUsersPanel() {
   };
 
   const handleToggleActive = async (user: User) => {
-    const action = user.is_active ? "禁用" : "启用";
-    if (!confirm(`确认要${action}用户 ${user.email} 吗？${user.is_active ? '\n\n禁用后，该用户将无法登录系统。' : ''}`)) {
+    const action = user.is_active ? t("tenantAdmin.users.disable") : t("tenantAdmin.users.enable");
+    if (!confirm(`${action} user ${user.email}?`)) {
       return;
     }
 
@@ -107,15 +108,15 @@ export default function TenantUsersPanel() {
       });
 
       if (response.ok) {
-        toast.success(`用户${action}成功！`);
+        toast.success(`${action} OK`);
         await fetchUsers();
       } else {
         const data = await response.json();
-        toast.error(data.detail || `${action}失败，请检查权限`);
+        toast.error(data.detail || `${action} failed`);
       }
     } catch (error) {
-      console.error(`${action}用户失败:`, error);
-      toast.error(`${action}失败，请稍后重试`);
+      console.error(`${action} failed:`, error);
+      toast.error(`${action} failed`);
     }
   };
 
@@ -123,7 +124,7 @@ export default function TenantUsersPanel() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        <p className="mt-4 text-gray-500">加载中...</p>
+        <p className="mt-4 text-gray-500">{t("common.loading")}</p>
       </div>
     );
   }
@@ -131,31 +132,31 @@ export default function TenantUsersPanel() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">用户管理</h2>
-        <span className="text-sm text-gray-500">共 {users.length} 名用户</span>
+        <h2 className="text-xl font-semibold text-gray-900">{t("tenantAdmin.users.title")}</h2>
+        <span className="text-sm text-gray-500">{t("tenantAdmin.users.totalUsers", { count: users.length })}</span>
       </div>
 
       {users.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">暂无用户</div>
+        <div className="text-center py-8 text-gray-500">{t("tenantAdmin.users.noUsers")}</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  邮箱
+                  {t("tenantAdmin.users.colEmail")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  角色
+                  {t("tenantAdmin.users.colRoles")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  状态
+                  {t("tenantAdmin.users.colStatus")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  注册时间
+                  {t("tenantAdmin.users.colCreatedAt")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  操作
+                  {t("tenantAdmin.users.colActions")}
                 </th>
               </tr>
             </thead>
@@ -168,7 +169,7 @@ export default function TenantUsersPanel() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                     {user.roles && user.roles.length > 0
                       ? user.roles.join(", ")
-                      : "无角色"}
+                      : t("tenantAdmin.users.noRole")}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
@@ -178,18 +179,18 @@ export default function TenantUsersPanel() {
                           : "bg-red-100 text-red-800"
                       }`}
                     >
-                      {user.is_active ? "活跃" : "禁用"}
+                      {user.is_active ? t("tenantAdmin.users.active") : t("tenantAdmin.users.disabled")}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {user.created_at ? new Date(user.created_at).toLocaleDateString("zh-CN") : "-"}
+                    {user.created_at ? new Date(user.created_at).toLocaleDateString() : "-"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                     <button
                       onClick={() => handleAssignRoles(user)}
                       className="text-indigo-600 hover:text-indigo-900"
                     >
-                      分配角色
+                      {t("tenantAdmin.users.assignRoles")}
                     </button>
                     <button
                       onClick={() => handleToggleActive(user)}
@@ -199,7 +200,7 @@ export default function TenantUsersPanel() {
                           : "text-green-600 hover:text-green-900"
                       }`}
                     >
-                      {user.is_active ? "禁用" : "启用"}
+                      {user.is_active ? t("tenantAdmin.users.disable") : t("tenantAdmin.users.enable")}
                     </button>
                   </td>
                 </tr>
@@ -209,12 +210,11 @@ export default function TenantUsersPanel() {
         </div>
       )}
 
-      {/* 角色分配对话框 */}
       {showRoleDialog && selectedUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
-              为用户 {selectedUser.email} 分配角色
+              {t("tenantAdmin.users.assignRolesTitle", { email: selectedUser.email })}
             </h3>
 
             <div className="space-y-2 mb-6">
@@ -236,13 +236,13 @@ export default function TenantUsersPanel() {
                 onClick={() => setShowRoleDialog(false)}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
               >
-                取消
+                {t("tenantAdmin.users.cancel")}
               </button>
               <button
                 onClick={handleSaveRoles}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
               >
-                保存
+                {t("tenantAdmin.users.save")}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { CTAButton, Input } from "@/ui/elements";
 import { fetch } from "@/utils";
 import TenantUsersModal from "./TenantUsersModal";
 import TenantRolesModal from "./TenantRolesModal";
+import { useTranslation } from "react-i18next";
 
 interface Tenant {
   id: string;
@@ -17,6 +18,7 @@ interface Tenant {
 }
 
 export default function TenantsPanel() {
+  const { t } = useTranslation();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [newTenantName, setNewTenantName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -24,7 +26,7 @@ export default function TenantsPanel() {
   const [generatingInviteFor, setGeneratingInviteFor] = useState<string | null>(null);
   const [editingExpiresFor, setEditingExpiresFor] = useState<string | null>(null);
   const [expiresDate, setExpiresDate] = useState<string>("");
-  
+
   // Modal states
   const [selectedTenantForUsers, setSelectedTenantForUsers] = useState<{ id: string; name: string } | null>(null);
   const [selectedTenantForRoles, setSelectedTenantForRoles] = useState<{ id: string; name: string } | null>(null);
@@ -36,8 +38,8 @@ export default function TenantsPanel() {
       const data = await response.json();
       setTenants(data.tenants || []);
     } catch (error) {
-      console.error("获取租户列表失败:", error);
-      toast.error("获取租户列表失败，请稍后重试");
+      console.error("Failed to fetch tenant list:", error);
+      toast.error(t("admin.tenants.fetchError"));
     }
   };
 
@@ -59,34 +61,17 @@ export default function TenantsPanel() {
       });
 
       const data = await response.json();
-      
-      // 显示新创建的租户信息
+
+      // Show newly created tenant info
       if (data.tenant_code) {
-        const expiresDate = data.expires_at ? new Date(data.expires_at).toLocaleDateString("zh-CN") : "未设置";
-        const adminInfo = data.admin_account 
-          ? `
-
-管理员账号：${data.admin_account.username}
-管理员密码：${data.admin_account.password}
-
-请妥善保管账号信息！`
-          : "";
-        
-        toast.success(
-          `租户创建成功！
-
-租户名称：${newTenantName}
-租户编码：${data.tenant_code}
-有效期至：${expiresDate}${adminInfo}`,
-          { duration: 6000 }
-        );
+        toast.success(t("admin.tenants.createButton") + " OK", { duration: 6000 });
       }
 
       setNewTenantName("");
       await fetchTenants();
     } catch (error) {
-      console.error("创建租户失败:", error);
-      toast.error("创建租户失败，请检查您是否为 super-admin 用户");
+      console.error("Failed to create tenant:", error);
+      toast.error(t("admin.tenants.createError"));
     } finally {
       setIsCreating(false);
     }
@@ -96,11 +81,11 @@ export default function TenantsPanel() {
     try {
       await navigator.clipboard.writeText(code);
       setCopiedCode(code);
-      toast.success("租户编码已复制到剪贴板");
+      toast.success(t("admin.tenants.copySuccess"));
       setTimeout(() => setCopiedCode(null), 2000);
     } catch (error) {
-      console.error("复制失败:", error);
-      toast.error("复制失败，请手动复制");
+      console.error("Copy failed:", error);
+      toast.error(t("admin.tenants.copyError"));
     }
   };
 
@@ -120,18 +105,15 @@ export default function TenantsPanel() {
       }
 
       const data = await response.json();
-      
-      toast.success(
-        `租户有效期更新成功！\n\n租户名称：${data.tenant_name}\n有效期：${data.expires_at ? new Date(data.expires_at).toLocaleString("zh-CN") : "无限期"}`,
-        { duration: 4000 }
-      );
-      
+
+      toast.success(t("admin.tenants.updateSuccess"), { duration: 4000 });
+
       setEditingExpiresFor(null);
       setExpiresDate("");
       await fetchTenants();
     } catch (error: any) {
-      console.error("更新有效期失败:", error);
-      toast.error(`更新有效期失败：${error.message || "请检查您是否为 super-admin 用户"}`);
+      console.error("Failed to update validity:", error);
+      toast.error(t("admin.tenants.updateError"));
     }
   };
 
@@ -146,22 +128,15 @@ export default function TenantsPanel() {
       });
 
       const data = await response.json();
-      
+
       if (data.invite_url) {
         const fullUrl = `${window.location.origin}${data.invite_url}`;
         await navigator.clipboard.writeText(fullUrl);
-        toast.success(
-          `邀请链接已复制到剪贴板！
-
-${fullUrl}
-
-有效期至：${new Date(data.expires_at).toLocaleString("zh-CN")}`,
-          { duration: 5000 }
-        );
+        toast.success(t("admin.tenants.inviteSuccess"), { duration: 5000 });
       }
     } catch (error) {
-      console.error("生成邀请链接失败:", error);
-      toast.error("生成邀请链接失败，请检查您的权限");
+      console.error("Failed to generate invite link:", error);
+      toast.error(t("admin.tenants.inviteError"));
     } finally {
       setGeneratingInviteFor(null);
     }
@@ -177,7 +152,7 @@ ${fullUrl}
           onClose={() => setSelectedTenantForUsers(null)}
         />
       )}
-      
+
       {/* 角色列表模态框 */}
       {selectedTenantForRoles && (
         <TenantRolesModal
@@ -187,30 +162,29 @@ ${fullUrl}
         />
       )}
       <div className="bg-gray-50 p-4 rounded-lg">
-        <h3 className="text-lg font-semibold mb-4">创建新租户</h3>
+        <h3 className="text-lg font-semibold mb-4">{t("admin.tenants.createTitle")}</h3>
         <div className="flex flex-row gap-3">
           <Input
             type="text"
-            placeholder="输入租户名称"
+            placeholder={t("admin.tenants.namePlaceholder")}
             value={newTenantName}
             onChange={(e) => setNewTenantName(e.target.value)}
             className="flex-1"
           />
           <CTAButton onClick={handleCreateTenant} disabled={isCreating || !newTenantName.trim()}>
-            {isCreating ? "创建中..." : "创建租户"}
+            {isCreating ? t("admin.tenants.creating") : t("admin.tenants.createButton")}
           </CTAButton>
         </div>
         <p className="text-sm text-gray-600 mt-2">
-          租户是组织的顶层容器，用于隔离不同组织的数据和用户。
-          <strong>注意：只有 super-admin 用户才能创建租户。</strong>
+          {t("admin.tenants.note")}
         </p>
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-4">现有租户</h3>
+        <h3 className="text-lg font-semibold mb-4">{t("admin.tenants.existingTitle")}</h3>
         {tenants.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            暂无租户，请创建第一个租户
+            {t("admin.tenants.noTenants")}
           </div>
         ) : (
           <div className="space-y-2">
@@ -222,11 +196,11 @@ ${fullUrl}
                 <div className="flex flex-row justify-between items-start">
                   <div className="flex-1">
                     <div className="font-semibold text-lg">{tenant.name}</div>
-                    
+
                     {/* 租户编码 */}
                     {tenant.tenant_code && (
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-sm text-gray-600">租户编码：</span>
+                        <span className="text-sm text-gray-600">{t("admin.tenants.tenantCode")}</span>
                         <code className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded font-mono text-sm tracking-wider">
                           {tenant.tenant_code}
                         </code>
@@ -234,16 +208,16 @@ ${fullUrl}
                           onClick={() => handleCopyCode(tenant.tenant_code!)}
                           className="text-xs text-indigo-600 hover:text-indigo-800"
                         >
-                          {copiedCode === tenant.tenant_code ? "✓ 已复制" : "复制"}
+                          {copiedCode === tenant.tenant_code ? t("admin.tenants.copied") : t("admin.tenants.copy")}
                         </button>
                       </div>
                     )}
-                    
+
                     <div className="text-sm text-gray-500 mt-1">ID: {tenant.id}</div>
                     <div className="text-sm text-gray-400 mt-1">
-                      创建时间: {new Date(tenant.created_at).toLocaleString("zh-CN")}
+                      {t("admin.tenants.createdAt")} {new Date(tenant.created_at).toLocaleString()}
                     </div>
-                    
+
                     {/* 有效期 */}
                     <div className="mt-2">
                       {editingExpiresFor === tenant.id ? (
@@ -257,7 +231,7 @@ ${fullUrl}
                           <button
                             onClick={() => {
                               if (!expiresDate) {
-                                alert("请选择有效期日期");
+                                alert(t("admin.tenants.selectDate"));
                                 return;
                               }
                               // 转换为 ISO 8601 格式（设置为当天23:59:59）
@@ -266,7 +240,7 @@ ${fullUrl}
                             }}
                             className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700"
                           >
-                            保存
+                            {t("admin.tenants.save")}
                           </button>
                           <button
                             onClick={() => {
@@ -275,19 +249,19 @@ ${fullUrl}
                             }}
                             className="text-xs text-gray-600 hover:text-gray-800"
                           >
-                            取消
+                            {t("admin.tenants.cancel")}
                           </button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600">有效期：</span>
+                          <span className="text-sm text-gray-600">{t("admin.tenants.validity")}</span>
                           <span className={`text-sm font-medium ${
                             !tenant.expires_at ? "text-green-600" :
                             new Date(tenant.expires_at) < new Date() ? "text-red-600" :
                             "text-gray-700"
                           }`}>
-                            {tenant.expires_at ? new Date(tenant.expires_at).toLocaleDateString("zh-CN") : "无限期"}
-                            {tenant.expires_at && new Date(tenant.expires_at) < new Date() && " (已过期)"}
+                            {tenant.expires_at ? new Date(tenant.expires_at).toLocaleDateString() : t("admin.tenants.unlimited")}
+                            {tenant.expires_at && new Date(tenant.expires_at) < new Date() && ` ${t("admin.tenants.expired")}`}
                           </span>
                           <button
                             onClick={() => {
@@ -311,13 +285,13 @@ ${fullUrl}
                             }}
                             className="text-xs text-indigo-600 hover:text-indigo-800"
                           >
-                            修改
+                            {t("admin.tenants.modify")}
                           </button>
                         </div>
                       )}
                     </div>
                   </div>
-                  
+
                   {/* 操作按钮 */}
                   <div className="flex flex-col gap-2">
                     <CTAButton
@@ -325,21 +299,21 @@ ${fullUrl}
                       disabled={generatingInviteFor === tenant.id}
                       className="text-sm py-1 px-3"
                     >
-                      {generatingInviteFor === tenant.id ? "生成中..." : "生成邀请链接"}
+                      {generatingInviteFor === tenant.id ? t("admin.tenants.generating") : t("admin.tenants.generateInvite")}
                     </CTAButton>
-                    
+
                     <button
                       onClick={() => setSelectedTenantForUsers({ id: tenant.id, name: tenant.name })}
                       className="text-sm py-1 px-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                     >
-                      查看用户
+                      {t("admin.tenants.viewUsers")}
                     </button>
-                    
+
                     <button
                       onClick={() => setSelectedTenantForRoles({ id: tenant.id, name: tenant.name })}
                       className="text-sm py-1 px-3 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                     >
-                      查看角色
+                      {t("admin.tenants.viewRoles")}
                     </button>
                   </div>
                 </div>

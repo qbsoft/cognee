@@ -2,6 +2,7 @@
 
 import React, { FormEvent, MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 
 import apiFetch from "@/utils/fetch";
 import { CTAButton, GhostButton, Input } from "@/ui/elements";
@@ -91,6 +92,7 @@ export default function DatasetSearchPage({ params }: DatasetSearchPageProps) {
 // Client Component - 包含所有客户端逻辑
 function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const [dataset, setDataset] = useState<DatasetSummary | null>(null);
   const [dataItems, setDataItems] = useState<DatasetDataItem[]>([]);
@@ -110,7 +112,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphExpanded, setGraphExpanded] = useState(false);
-  
+
   // 搜索结果相关的图谱数据
   const [searchGraphData, setSearchGraphData] = useState<GraphData<NodeObject, LinkObject> | undefined>();
   const [showSearchGraph, setShowSearchGraph] = useState(false);
@@ -148,11 +150,11 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       const data: DatasetDataItem[] = await response.json();
       setDataItems(data);
     } catch (error: any) {
-      setFileContentError(error?.message || "加载数据集文件列表失败");
+      setFileContentError(error?.message || t("datasetSearch.loadingFiles"));
     } finally {
       setDataLoading(false);
     }
-  }, [datasetId]);
+  }, [datasetId, t]);
 
   // 将图谱数据转换为前端格式
   const normalizeGraphData = useCallback((graph: { nodes?: any[], edges?: any[] }) => {
@@ -160,7 +162,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       nodes: (graph.nodes || []).map((node: any) => {
         // 处理空节点名称
         let label = node.label || node.name || '';
-        
+
         // 如果 label 为空，尝试使用其他字段
         if (!label || label.trim() === '') {
           // 尝试使用 text 字段的前几个词
@@ -178,22 +180,22 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
               label = descStr.length > 30 ? descStr.substring(0, 30) + '...' : descStr;
             }
           }
-          
+
           // 如果还是为空，使用类型和ID
           if (!label || label.trim() === '') {
             const nodeType = node.type || 'unknown';
-            const typeMap: Record<string, string> = {
-              'DocumentChunk': '文档片段',
-              'TextDocument': '文档',
-              'Entity': '实体',
-              'EntityType': '实体类型',
-              'TextSummary': '摘要',
+            const nodeTypeKeys: Record<string, string> = {
+              'DocumentChunk': 'datasetSearch.nodeTypes.DocumentChunk',
+              'TextDocument': 'datasetSearch.nodeTypes.TextDocument',
+              'Entity': 'datasetSearch.nodeTypes.Entity',
+              'EntityType': 'datasetSearch.nodeTypes.EntityType',
+              'TextSummary': 'datasetSearch.nodeTypes.TextSummary',
             };
-            const translatedType = typeMap[nodeType] || nodeType;
+            const translatedType = nodeTypeKeys[nodeType] ? t(nodeTypeKeys[nodeType]) : nodeType;
             label = `${translatedType}_${node.id?.substring(0, 8) || 'unknown'}`;
           }
         }
-        
+
         return {
           ...node,
           label: label,
@@ -202,10 +204,10 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       links: (graph.edges || []).map((edge: any) => ({
         source: edge.source,
         target: edge.target,
-        label: edge.label || '关联',
+        label: edge.label || t("datasetSearch.edgeLabel"),
       })),
     } as GraphData<NodeObject, LinkObject>;
-  }, []);
+  }, [t]);
 
   const loadGraph = useCallback(async () => {
     setGraphLoading(true);
@@ -215,16 +217,16 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
         headers: { "Content-Type": "application/json" },
       });
       const graph = await response.json();
-      
+
       const normalized = normalizeGraphData(graph);
       setGraphData(normalized);
       setFullGraphData(normalized); // 保存完整图谱数据
     } catch (error: any) {
-      setGraphError(error?.message || "加载图关系数据失败");
+      setGraphError(error?.message || t("datasetSearch.loadGraphError"));
     } finally {
       setGraphLoading(false);
     }
-  }, [datasetId, normalizeGraphData]);
+  }, [datasetId, normalizeGraphData, t]);
 
   useEffect(() => {
     loadDatasetInfo();
@@ -257,11 +259,11 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
         const text = await response.text();
         setFileContent(text);
       } else {
-        setFileContent("该文件为非文本类型，当前暂不支持在线预览。");
+        setFileContent(t("datasetSearch.nonTextFile"));
       }
     } catch (error: any) {
       console.error("加载文件内容失败:", error);
-      setFileContentError(error?.message || "加载文件内容失败");
+      setFileContentError(error?.message || t("datasetSearch.fileLoadFailed"));
     } finally {
       setFileContentLoading(false);
     }
@@ -307,9 +309,9 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       console.log('result类型:', typeof data.result, 'result值:', data.result);
       console.log('context类型:', typeof data.context, 'context是数组?', Array.isArray(data.context));
       console.log('graphs字段:', data.graphs);
-      
+
       setSearchResult(data);
-      
+
       // 根据搜索结果更新图谱
       if (data.graphs && typeof data.graphs === 'object') {
         // graphs 是一个对象，键是数据集名称，值是图谱数据
@@ -319,7 +321,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
           const allNodesMap = new Map<string, any>();
           const allEdgesSet = new Set<string>();
           const allEdges: any[] = [];
-          
+
           graphEntries.forEach(([datasetName, graph]: [string, any]) => {
             // 合并节点
             if (graph.nodes && Array.isArray(graph.nodes)) {
@@ -329,7 +331,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 }
               });
             }
-            
+
             // 合并边
             if (graph.edges && Array.isArray(graph.edges)) {
               graph.edges.forEach((edge: any) => {
@@ -341,17 +343,17 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
               });
             }
           });
-          
+
           // 转换为前端格式
           const searchGraph = normalizeGraphData({
             nodes: Array.from(allNodesMap.values()),
             edges: allEdges,
           });
-          
+
           setSearchGraphData(searchGraph);
           setShowSearchGraph(true); // 自动切换到搜索结果图谱
           setGraphData(searchGraph); // 更新显示的图谱
-          
+
           console.log('已根据搜索结果更新图谱，节点数:', searchGraph.nodes.length, '边数:', searchGraph.links.length);
         } else {
           console.log('graphs对象为空，保持显示完整数据集图谱');
@@ -366,11 +368,11 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
         }
       }
     } catch (error: any) {
-      setSearchError(error?.message || "检索失败");
+      setSearchError(error?.message || t("datasetSearch.searchError"));
     } finally {
       setSearching(false);
     }
-  }, [datasetId, searchQuery]);
+  }, [datasetId, searchQuery, t]);
 
   // 处理引用点击 - 打开左侧文件并滚动到精确位置
   const handleCitationClick = async (index: number) => {
@@ -378,7 +380,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
     console.log('[Citation] 点击索引:', index);
     console.log('[Citation] searchResult:', searchResult);
     console.log('[Citation] dataItems长度:', dataItems.length);
-    
+
     // 将context转换为数组格式
     let contextArray: any[] = [];
     if (searchResult?.context) {
@@ -391,9 +393,9 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
         console.log('[Citation] context是对象，转换后数组长度:', contextArray.length);
       }
     }
-    
+
     console.log('[Citation] contextArray:', contextArray);
-      
+
     // 获取对应的context项
     if (contextArray[index]) {
       const ctx = contextArray[index];
@@ -401,57 +403,57 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       console.log('[Citation] source_file_path:', ctx.source_file_path);
       console.log('[Citation] start_line:', ctx.start_line);
       console.log('[Citation] end_line:', ctx.end_line);
-        
+
       // 尝试打开对应文件
       let fileToOpen = null;
       let fileIndex = -1;
-        
+
       // 优先使用source_file_path查找
       if (ctx.source_file_path) {
         console.log('[Citation] 尝试匹配文件:', ctx.source_file_path);
         console.log('[Citation] 可用文件列表:', dataItems.map(item => item.name));
-        
-        fileIndex = dataItems.findIndex(item => 
-          item.name.includes(ctx.source_file_path) || 
+
+        fileIndex = dataItems.findIndex(item =>
+          item.name.includes(ctx.source_file_path) ||
           ctx.source_file_path.includes(item.name)
         );
-        
+
         console.log('[Citation] 匹配到的文件索引:', fileIndex);
       }
-        
+
       // 如果找不到，尝试从text中提取文件名
       if (fileIndex === -1 && ctx.text) {
         const fileMatch = ctx.text.match(/([\w\-\u4e00-\u9fa5]+\.(txt|pdf|docx|md|doc|csv|json|xml))/);
         if (fileMatch) {
           const fileName = fileMatch[1];
-          fileIndex = dataItems.findIndex(item => 
+          fileIndex = dataItems.findIndex(item =>
             item.name.includes(fileName) || fileName.includes(item.name)
           );
         }
       }
-        
+
       if (fileIndex !== -1) {
         fileToOpen = dataItems[fileIndex];
         console.log('[Citation] 准备打开文件:', fileToOpen.name);
-        
+
         await handleSelectData(fileToOpen, fileIndex);
         console.log('[Citation] 文件打开完成，等待300ms后滚动');
-          
+
         // 等待文件加载完成后滚动到指定行
         setTimeout(() => {
           console.log('[Citation] 开始执行滚动逻辑');
           console.log('[Citation] ctx.start_line:', ctx.start_line, 'ctx.end_line:', ctx.end_line);
-          
+
           if (ctx.start_line && ctx.end_line) {
             // 查找文件内容容器（实际是 overflow-auto 的 div）
             const fileContainerSelectors = [
               '.overflow-auto.p-4',  // 实际的容器
               'pre',  // pre标签
             ];
-            
+
             let scrollContainer = null;
             let contentElement = null;
-            
+
             // 尝试找到滚动容器和内容元素
             for (const selector of fileContainerSelectors) {
               const elements = document.querySelectorAll(selector);
@@ -475,53 +477,53 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 if (scrollContainer) break;
               }
             }
-            
+
             console.log('[Citation] scrollContainer:', scrollContainer);
             console.log('[Citation] contentElement:', contentElement);
-            
+
             if (scrollContainer && contentElement) {
               // 获取文件内容
               const fileText = contentElement.textContent || '';
-              
+
               console.log('[Citation] 文件总长度:', fileText.length);
               console.log('[Citation] context.start_char:', ctx.start_char, 'context.end_char:', ctx.end_char);
               console.log('[Citation] context.text前100字符:', ctx.text?.substring(0, 100));
-              
+
               // 优先使用 start_char/end_char 进行精确定位
-              if (ctx.start_char !== null && ctx.start_char !== undefined && 
+              if (ctx.start_char !== null && ctx.start_char !== undefined &&
                   ctx.end_char !== null && ctx.end_char !== undefined) {
                 console.log('[Citation] 使用start_char/end_char进行精确定位');
-                
+
                 // 使用Range API精确定位
                 const range = document.createRange();
                 const textNode = contentElement.firstChild;
-                
+
                 if (textNode && textNode.nodeType === Node.TEXT_NODE) {
                   try {
                     const start = Math.max(0, Math.min(ctx.start_char, fileText.length));
                     const end = Math.max(start, Math.min(ctx.end_char, fileText.length));
-                    
+
                     console.log('[Citation] Range范围:', start, '-', end);
-                    
+
                     range.setStart(textNode, start);
                     range.setEnd(textNode, end);
-                    
+
                     // 计算位置
                     const rect = range.getBoundingClientRect();
                     const containerRect = scrollContainer.getBoundingClientRect();
                     const relativeTop = rect.top - containerRect.top + scrollContainer.scrollTop;
-                    
+
                     console.log('[Citation] 精确滚动位置:', relativeTop);
-                    
+
                     // 滚动到目标位置（居中显示）
                     const offset = scrollContainer.clientHeight / 3; // 显示在上部1/3处
                     scrollContainer.scrollTo({
                       top: Math.max(0, relativeTop - offset),
                       behavior: 'smooth'
                     });
-                    
+
                     console.log('[Citation] 精确滚动已执行 (start_char/end_char)');
-                    
+
                     // 添加精确的文本高亮效果
                     // 创建一个临时的高亮span元素
                     const highlightId = 'citation-highlight-' + Date.now();
@@ -532,7 +534,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     highlightSpan.style.transition = 'background-color 0.3s ease';
                     highlightSpan.appendChild(fragment);
                     range.insertNode(highlightSpan);
-                    
+
                     // 20秒后移除高亮
                     setTimeout(() => {
                       const highlight = document.getElementById(highlightId);
@@ -544,7 +546,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                         highlight.parentNode.removeChild(highlight);
                       }
                     }, 20000);
-                    
+
                   } catch (e) {
                     console.log('[Citation] Range API错误:', e);
                     // 降级处理：使用start_line
@@ -556,41 +558,41 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     });
                   }
                 }
-              } 
+              }
               // 如果没有start_char/end_char，尝试使用context.text进行文本匹配
               else if (ctx.text && ctx.text.length > 50) {
                 console.log('[Citation] start_char/end_char不可用，使用context.text匹配');
                 // 取前100个字符作为搜索关键词
                 const searchText = ctx.text.substring(0, 100).trim();
                 const textIndex = fileText.indexOf(searchText);
-                
+
                 console.log('[Citation] 搜索关键词:', searchText.substring(0, 50) + '...');
                 console.log('[Citation] 找到的位置索引:', textIndex);
-                
+
                 if (textIndex !== -1) {
                   // 找到了！使用Range API精确定位
                   const range = document.createRange();
                   const textNode = contentElement.firstChild;
-                  
+
                   if (textNode && textNode.nodeType === Node.TEXT_NODE) {
                     try {
                       range.setStart(textNode, textIndex);
                       range.setEnd(textNode, Math.min(textIndex + 100, fileText.length));
-                      
+
                       const rect = range.getBoundingClientRect();
                       const containerRect = scrollContainer.getBoundingClientRect();
                       const relativeTop = rect.top - containerRect.top + scrollContainer.scrollTop;
-                      
+
                       console.log('[Citation] 精确滚动位置:', relativeTop);
-                      
+
                       const offset = scrollContainer.clientHeight / 3;
                       scrollContainer.scrollTo({
                         top: Math.max(0, relativeTop - offset),
                         behavior: 'smooth'
                       });
-                      
+
                       console.log('[Citation] 精确滚动已执行 (text匹配)');
-                      
+
                       // 添加精确的文本高亮效果
                       const highlightId = 'citation-highlight-' + Date.now();
                       const fragment = range.extractContents();
@@ -600,7 +602,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                       highlightSpan.style.transition = 'background-color 0.3s ease';
                       highlightSpan.appendChild(fragment);
                       range.insertNode(highlightSpan);
-                      
+
                       setTimeout(() => {
                         const highlight = document.getElementById(highlightId);
                         if (highlight && highlight.parentNode) {
@@ -610,7 +612,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                           highlight.parentNode.removeChild(highlight);
                         }
                       }, 20000);
-                      
+
                     } catch (e) {
                       console.log('[Citation] Range API错误:', e);
                       // 降级为start_line
@@ -636,7 +638,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     });
                   }
                 }
-              } 
+              }
               // 最后降级：只有start_line
               else if (ctx.start_line) {
                 console.log('[Citation] 只有start_line可用，使用行号估算');
@@ -671,8 +673,8 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
           <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center mb-4">
             <SearchIcon />
           </div>
-          <p className="text-gray-500 text-sm">输入问题开始检索</p>
-          <p className="text-gray-400 text-xs mt-1">基于知识图谱进行语义检索与问答</p>
+          <p className="text-gray-500 text-sm">{t("datasetSearch.searchPrompt")}</p>
+          <p className="text-gray-400 text-xs mt-1">{t("datasetSearch.searchHint")}</p>
         </div>
       );
     }
@@ -681,8 +683,8 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
       if (searchResult.length === 0) {
         return (
           <div className="flex flex-col items-center justify-center h-full py-8">
-            <p className="text-gray-500 text-sm">未找到匹配结果</p>
-            <p className="text-gray-400 text-xs mt-1">请尝试使用不同的关键词</p>
+            <p className="text-gray-500 text-sm">{t("datasetSearch.noResults")}</p>
+            <p className="text-gray-400 text-xs mt-1">{t("datasetSearch.differentKeywords")}</p>
           </div>
         );
       }
@@ -711,14 +713,14 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
           <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-100">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">💡</span>
-              <span className="font-semibold text-gray-800">回答</span>
+              <span className="font-semibold text-gray-800">{t("datasetSearch.answer")}</span>
             </div>
             <div className="text-gray-700 leading-relaxed">
               {(() => {
                 const resultText = typeof searchResult.result === "string"
                   ? searchResult.result
                   : JSON.stringify(searchResult.result, null, 2);
-                
+
                 // 处理context，无论是数组还是对象
                 let contextArray: any[] = [];
                 if (searchResult.context) {
@@ -729,54 +731,54 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     contextArray = Object.values(searchResult.context).flat();
                   }
                 }
-                
+
                 // 过滤出有位置信息的DocumentChunk节点
-                const citableContexts = contextArray.filter((ctx: any) => 
-                  ctx.node_type === 'DocumentChunk' && 
-                  ctx.source_file_path && 
+                const citableContexts = contextArray.filter((ctx: any) =>
+                  ctx.node_type === 'DocumentChunk' &&
+                  ctx.source_file_path &&
                   ctx.start_line != null
                 );
-                
+
                 // 如果有可引用的context,在文本中智能嵌入上标引用
                 if (citableContexts.length > 0) {
                   // 尝试智能匹配：在回答文本中找到与context相关的位置
                   const sentences = resultText.split(/([。！？\n])/); // 按句子分割
                   const annotatedParts: React.ReactNode[] = [];
                   let usedCitations = new Set<number>();
-                  
+
                   sentences.forEach((sentence: string, sentIdx: number) => {
                     if (sentence.match(/[。！？\n]/)) {
                       // 这是标点符号,直接添加
                       annotatedParts.push(sentence);
                       return;
                     }
-                    
+
                     if (!sentence.trim()) {
                       annotatedParts.push(sentence);
                       return;
                     }
-                    
+
                     // 对每个句子，找出最相关的引用
                     const relevantCitations: number[] = [];
                     citableContexts.forEach((ctx: any, idx: number) => {
                       if (usedCitations.has(idx)) return;
-                      
+
                       // 检查context.text中是否包含这个句子的关键词
                       if (ctx.text && ctx.text.length > 10) {
                         const keywords = sentence.match(/[\u4e00-\u9fa5]{2,}/g) || [];
                         const matchCount = keywords.filter((kw: string) => ctx.text.includes(kw)).length;
-                        
+
                         if (matchCount > 0) {
                           relevantCitations.push(idx);
                         }
                       }
                     });
-                    
+
                     // 添加句子文本
                     annotatedParts.push(
                       <span key={`sent-${sentIdx}`}>{sentence}</span>
                     );
-                    
+
                     // 添加上标引用
                     if (relevantCitations.length > 0) {
                       relevantCitations.forEach(citIdx => {
@@ -787,7 +789,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                             <button
                               onClick={() => handleCitationClick(originalIndex)}
                               className="text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer mx-0.5"
-                              title="点击查看原文出处"
+                              title={t("datasetSearch.clickToViewSource")}
                             >
                               [{citIdx + 1}]
                             </button>
@@ -796,12 +798,12 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                       });
                     }
                   });
-                  
+
                   // 如果还有未使用的引用，在文本末尾统一添加
                   const unusedCitations = citableContexts
                     .map((_, idx) => idx)
                     .filter(idx => !usedCitations.has(idx));
-                  
+
                   return (
                     <div>
                       <div className="whitespace-pre-wrap leading-relaxed">
@@ -815,7 +817,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                                   <button
                                     onClick={() => handleCitationClick(originalIndex)}
                                     className="text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer mx-0.5"
-                                    title="点击查看原文出处"
+                                    title={t("datasetSearch.clickToViewSource")}
                                   >
                                     [{citIdx + 1}]
                                   </button>
@@ -825,19 +827,19 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                           </span>
                         )}
                       </div>
-                      
+
                       {/* 引用列表（鼠标悬停提示）*/}
                       <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-600">
-                        <div className="font-medium mb-1.5">引用来源：</div>
+                        <div className="font-medium mb-1.5">{t("datasetSearch.sources")}</div>
                         <div className="space-y-1">
                           {citableContexts.map((ctx: any, idx: number) => {
-                            const fileName = ctx.source_file_path || '未知文件';
-                            const lineInfo = ctx.start_line && ctx.end_line 
-                              ? `第${ctx.start_line}-${ctx.end_line}行`
-                              : ctx.start_line 
-                                ? `第${ctx.start_line}行`
+                            const fileName = ctx.source_file_path || t("datasetSearch.unknownFile");
+                            const lineInfo = ctx.start_line && ctx.end_line
+                              ? t("datasetSearch.lineRange", { start: ctx.start_line, end: ctx.end_line })
+                              : ctx.start_line
+                                ? t("datasetSearch.line", { start: ctx.start_line })
                                 : '';
-                            
+
                             return (
                               <div key={idx} className="text-gray-500">
                                 [{idx + 1}] {fileName} {lineInfo}
@@ -861,7 +863,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
   // 图谱全屏弹窗
   const renderGraphModal = () => {
     if (!graphExpanded) return null;
-    
+
     return (
       <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden">
@@ -871,8 +873,8 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 <GraphIcon />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900">知识图谱</h3>
-                <p className="text-xs text-gray-500">数据集：{dataset?.name}</p>
+                <h3 className="font-semibold text-gray-900">{t("datasetSearch.tabGraph")}</h3>
+                <p className="text-xs text-gray-500">{t("datasetSearch.datasetScope")}{dataset?.name}</p>
               </div>
             </div>
             <button
@@ -892,21 +894,21 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     setGraphData(showSearchGraph ? fullGraphData : searchGraphData);
                   }}
                   className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                    showSearchGraph 
-                      ? 'bg-indigo-600 text-white' 
+                    showSearchGraph
+                      ? 'bg-indigo-600 text-white'
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
-                  {showSearchGraph ? '显示完整图谱' : '显示搜索结果图谱'}
+                  {showSearchGraph ? t("datasetSearch.showFullGraph") : t("datasetSearch.showSearchGraph")}
                 </button>
                 {showSearchGraph && searchGraphData && (
                   <span className="text-xs text-gray-500">
-                    ({searchGraphData.nodes.length} 个节点, {searchGraphData.links.length} 条边)
+                    ({searchGraphData.nodes.length} {t("datasetSearch.nodes")}, {searchGraphData.links.length} {t("datasetSearch.edges")})
                   </span>
                 )}
                 {!showSearchGraph && fullGraphData && (
                   <span className="text-xs text-gray-500">
-                    ({fullGraphData.nodes.length} 个节点, {fullGraphData.links.length} 条边)
+                    ({fullGraphData.nodes.length} {t("datasetSearch.nodes")}, {fullGraphData.links.length} {t("datasetSearch.edges")})
                   </span>
                 )}
               </div>
@@ -922,7 +924,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-gray-400">
-                  暂无图数据
+                  {t("datasetSearch.noGraphData")}
                 </div>
               )}
             </div>
@@ -935,7 +937,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/30">
       {renderGraphModal()}
-      
+
       {/* 顶部导航栏 */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200/50">
         <div className="max-w-[1800px] mx-auto px-6 py-4">
@@ -946,13 +948,13 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <BackIcon />
-                <span>返回</span>
+                <span>{t("datasetSearch.back")}</span>
               </button>
               <div className="h-6 w-px bg-gray-200" />
               <div>
-                <div className="text-xs text-indigo-600 font-medium">数据集检索</div>
+                <div className="text-xs text-indigo-600 font-medium">{t("datasetSearch.datasetScope")}</div>
                 <div className="text-lg font-bold text-gray-900">
-                  {dataset?.name || "加载中..."}
+                  {dataset?.name || t("datasetSearch.loadingFiles")}
                 </div>
               </div>
             </div>
@@ -981,24 +983,24 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                   </div>
                   <input
                     type="text"
-                    placeholder="输入你的问题，例如：文档的核心结论是什么？主要观点有哪些？"
+                    placeholder={t("datasetSearch.searchPlaceholder")}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-12 pr-4 py-4 text-base border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none transition-all"
                   />
                 </div>
-                <CTAButton 
-                  type="submit" 
+                <CTAButton
+                  type="submit"
                   disabled={searching || !searchQuery.trim()}
                   className="px-8 py-4 text-base"
                 >
                   {searching ? (
                     <span className="flex items-center gap-2">
                       <LoadingIndicator />
-                      检索中...
+                      {t("datasetSearch.searching")}
                     </span>
                   ) : (
-                    "开始检索"
+                    t("datasetSearch.searchButton")
                   )}
                 </CTAButton>
               </div>
@@ -1014,7 +1016,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
 
         {/* 主内容区域 - 两栏布局 */}
         <div className="grid grid-cols-12 gap-6" style={{ height: 'calc(100vh - 280px)' }}>
-          
+
           {/* 左侧：文件内容预览 - 58% */}
           <div className="col-span-12 lg:col-span-7 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
             {/* 文件列表横条 */}
@@ -1024,18 +1026,18 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                   onClick={handlePrevFile}
                   disabled={dataItems.length === 0}
                   className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="上一个文件"
+                  title={t("datasetSearch.prevFile")}
                 >
                   <ChevronLeftIcon />
                 </button>
-                
+
                 <div className="flex-1 min-w-0 group relative">
                   {dataItems.length > 0 ? (
                     <>
                       <div className="flex items-center gap-2">
                         <FileIcon />
                         <span className="font-semibold text-gray-800 truncate">
-                          {dataItems[currentFileIndex]?.name || '未选择文件'}
+                          {dataItems[currentFileIndex]?.name || t("datasetSearch.noFileSelected")}
                         </span>
                         <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full flex-shrink-0">
                           {currentFileIndex + 1} / {dataItems.length}
@@ -1051,16 +1053,16 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                   ) : (
                     <div className="flex items-center gap-2 text-gray-400">
                       <FileIcon />
-                      <span className="text-sm">暂无文件</span>
+                      <span className="text-sm">{dataLoading ? t("datasetSearch.loadingFiles") : t("datasetSearch.noFiles")}</span>
                     </div>
                   )}
                 </div>
-                
+
                 <button
                   onClick={handleNextFile}
                   disabled={dataItems.length === 0}
                   className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="下一个文件"
+                  title={t("datasetSearch.nextFile")}
                 >
                   <ChevronRightIcon />
                 </button>
@@ -1068,12 +1070,12 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 {fileContentLoading && (
                   <span className="flex items-center gap-1 text-xs text-gray-500">
                     <LoadingIndicator />
-                    加载中...
+                    {t("datasetSearch.loadingFiles")}
                   </span>
                 )}
               </div>
             </div>
-            
+
             {/* 文件内容区域 */}
             <div className="flex-1 overflow-auto p-4 bg-gray-50/50">
               {fileContentError && (
@@ -1086,7 +1088,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                   <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
                     <FileIcon />
                   </div>
-                  <p className="text-gray-500 text-sm">点击左右箭头浏览文件</p>
+                  <p className="text-gray-500 text-sm">{t("datasetSearch.clickArrows")}</p>
                 </div>
               )}
               {fileContent && !fileContentError && (
@@ -1104,7 +1106,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
               <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-purple-50">
                 <div className="flex items-center gap-2">
                   <span>💡</span>
-                  <span className="font-semibold text-gray-800">检索结果</span>
+                  <span className="font-semibold text-gray-800">{t("datasetSearch.searchResults")}</span>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
@@ -1118,10 +1120,10 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <GraphIcon />
-                    <span className="font-semibold text-gray-800">知识图谱</span>
+                    <span className="font-semibold text-gray-800">{t("datasetSearch.tabGraph")}</span>
                     {graphData && (
                       <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                        {graphData.nodes?.length || 0} 节点
+                        {graphData.nodes?.length || 0} {t("datasetSearch.nodes")}
                       </span>
                     )}
                   </div>
@@ -1134,7 +1136,7 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                     <button
                       onClick={() => setGraphExpanded(true)}
                       className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 hover:text-gray-700"
-                      title="全屏查看"
+                      title={t("datasetSearch.expand")}
                     >
                       <ExpandIcon />
                     </button>
@@ -1156,21 +1158,21 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                         setGraphData(showSearchGraph ? fullGraphData : searchGraphData);
                       }}
                       className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
-                        showSearchGraph 
-                          ? 'bg-indigo-600 text-white' 
+                        showSearchGraph
+                          ? 'bg-indigo-600 text-white'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      {showSearchGraph ? '完整图谱' : '搜索结果'}
+                      {showSearchGraph ? t("datasetSearch.fullGraph") : t("datasetSearch.searchResults")}
                     </button>
                     {showSearchGraph && searchGraphData && (
                       <span className="text-xs text-gray-500">
-                        {searchGraphData.nodes.length}节点/{searchGraphData.links.length}边
+                        {searchGraphData.nodes.length}{t("datasetSearch.nodes")}/{searchGraphData.links.length}{t("datasetSearch.edges")}
                       </span>
                     )}
                     {!showSearchGraph && fullGraphData && (
                       <span className="text-xs text-gray-500">
-                        {fullGraphData.nodes.length}节点/{fullGraphData.links.length}边
+                        {fullGraphData.nodes.length}{t("datasetSearch.nodes")}/{fullGraphData.links.length}{t("datasetSearch.edges")}
                       </span>
                     )}
                   </div>
@@ -1189,8 +1191,8 @@ function DatasetSearchPageClient({ datasetId }: { datasetId: string }) {
                       <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
                         <GraphIcon />
                       </div>
-                      <p className="text-sm text-gray-500">暂无图数据</p>
-                      <p className="text-xs text-gray-400 mt-1">请先执行 cognify 流程</p>
+                      <p className="text-sm text-gray-500">{t("datasetSearch.noGraphData")}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t("datasetSearch.cognifyFirst")}</p>
                     </div>
                   )}
                 </div>

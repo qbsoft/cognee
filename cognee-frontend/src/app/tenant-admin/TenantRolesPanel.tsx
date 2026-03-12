@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
 import { fetch } from "@/utils";
 
@@ -20,6 +21,7 @@ export default function TenantRolesPanel() {
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDescription, setNewRoleDescription] = useState("");
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchRoles();
@@ -32,8 +34,8 @@ export default function TenantRolesPanel() {
       const data = await response.json();
       setRoles(data.roles || []);
     } catch (error) {
-      console.error("获取角色列表失败:", error);
-      toast.error("获取角色列表失败，请稍后重试");
+      console.error("Failed to get roles:", error);
+      toast.error("Failed to get roles");
     } finally {
       setLoading(false);
     }
@@ -41,7 +43,7 @@ export default function TenantRolesPanel() {
 
   const handleCreateRole = async () => {
     if (!newRoleName.trim()) {
-      toast.error("请输入角色名称");
+      toast.error(t("tenantAdmin.roles.roleNameLabel"));
       return;
     }
 
@@ -56,18 +58,18 @@ export default function TenantRolesPanel() {
       });
 
       if (response.ok) {
-        toast.success("角色创建成功！");
+        toast.success(t("tenantAdmin.roles.create") + " OK");
         setShowCreateDialog(false);
         setNewRoleName("");
         setNewRoleDescription("");
         await fetchRoles();
       } else {
         const data = await response.json();
-        toast.error(data.detail || "创建角色失败");
+        toast.error(data.detail || "Create role failed");
       }
     } catch (error) {
-      console.error("创建角色失败:", error);
-      toast.error("创建角色失败，请稍后重试");
+      console.error("Create role failed:", error);
+      toast.error("Create role failed");
     }
   };
 
@@ -85,23 +87,23 @@ export default function TenantRolesPanel() {
       });
 
       if (response.ok) {
-        toast.success("角色更新成功！");
+        toast.success(t("tenantAdmin.roles.save") + " OK");
         setShowEditDialog(false);
         setSelectedRole(null);
         setNewRoleName("");
         setNewRoleDescription("");
         await fetchRoles();
       } else {
-        toast.error("更新角色失败，请检查权限");
+        toast.error("Update role failed");
       }
     } catch (error) {
-      console.error("更新角色失败:", error);
-      toast.error("更新角色失败，请稍后重试");
+      console.error("Update role failed:", error);
+      toast.error("Update role failed");
     }
   };
 
   const handleDeleteRole = async (roleId: string, roleName: string) => {
-    if (!confirm(`确定要删除角色 "${roleName}" 吗？此操作不可恢复。`)) {
+    if (!confirm(`Delete role "${roleName}"? This cannot be undone.`)) {
       return;
     }
 
@@ -111,15 +113,15 @@ export default function TenantRolesPanel() {
       });
 
       if (response.ok) {
-        toast.success("角色删除成功！");
+        toast.success(t("tenantAdmin.roles.delete") + " OK");
         await fetchRoles();
       } else {
         const data = await response.json();
-        toast.error(data.detail || "删除角色失败");
+        toast.error(data.detail || "Delete role failed");
       }
     } catch (error) {
-      console.error("删除角色失败:", error);
-      toast.error("删除角色失败，请稍后重试");
+      console.error("Delete role failed:", error);
+      toast.error("Delete role failed");
     }
   };
 
@@ -134,7 +136,7 @@ export default function TenantRolesPanel() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        <p className="mt-4 text-gray-500">加载中...</p>
+        <p className="mt-4 text-gray-500">{t("common.loading")}</p>
       </div>
     );
   }
@@ -142,17 +144,17 @@ export default function TenantRolesPanel() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">角色管理</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t("tenantAdmin.roles.title")}</h2>
         <button
           onClick={() => setShowCreateDialog(true)}
           className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
         >
-          + 创建角色
+          {t("tenantAdmin.roles.createRole")}
         </button>
       </div>
 
       {roles.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">暂无角色</div>
+        <div className="text-center py-8 text-gray-500">{t("tenantAdmin.roles.noRoles")}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {roles.map((role) => (
@@ -170,12 +172,12 @@ export default function TenantRolesPanel() {
               </div>
 
               <div className="text-xs text-gray-500 mb-3">
-                创建时间: {new Date(role.created_at).toLocaleDateString("zh-CN")}
+                {t("tenantAdmin.roles.createdAt")} {new Date(role.created_at).toLocaleDateString()}
               </div>
 
               {role.user_count !== undefined && (
                 <div className="text-sm text-gray-600 mb-3">
-                  {role.user_count} 名用户
+                  {t("tenantAdmin.roles.usersCount", { count: role.user_count })}
                 </div>
               )}
 
@@ -184,13 +186,13 @@ export default function TenantRolesPanel() {
                   onClick={() => openEditDialog(role)}
                   className="flex-1 text-sm text-indigo-600 hover:text-indigo-800"
                 >
-                  编辑
+                  {t("tenantAdmin.roles.edit")}
                 </button>
                 <button
                   onClick={() => handleDeleteRole(role.id, role.name)}
                   className="flex-1 text-sm text-red-600 hover:text-red-800"
                 >
-                  删除
+                  {t("tenantAdmin.roles.delete")}
                 </button>
               </div>
             </div>
@@ -198,34 +200,33 @@ export default function TenantRolesPanel() {
         </div>
       )}
 
-      {/* 创建角色对话框 */}
       {showCreateDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">创建新角色</h3>
+            <h3 className="text-lg font-semibold mb-4">{t("tenantAdmin.roles.createTitle")}</h3>
 
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  角色名称 *
+                  {t("tenantAdmin.roles.roleNameLabel")}
                 </label>
                 <input
                   type="text"
                   value={newRoleName}
                   onChange={(e) => setNewRoleName(e.target.value)}
-                  placeholder="例如：项目经理"
+                  placeholder={t("tenantAdmin.roles.roleNamePlaceholder")}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  角色描述
+                  {t("tenantAdmin.roles.descLabel")}
                 </label>
                 <textarea
                   value={newRoleDescription}
                   onChange={(e) => setNewRoleDescription(e.target.value)}
-                  placeholder="简要描述角色职责..."
+                  placeholder={t("tenantAdmin.roles.descPlaceholder")}
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                 />
@@ -241,29 +242,28 @@ export default function TenantRolesPanel() {
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
               >
-                取消
+                {t("tenantAdmin.roles.cancel")}
               </button>
               <button
                 onClick={handleCreateRole}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
               >
-                创建
+                {t("tenantAdmin.roles.create")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 编辑角色对话框 */}
       {showEditDialog && selectedRole && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">编辑角色</h3>
+            <h3 className="text-lg font-semibold mb-4">{t("tenantAdmin.roles.editTitle")}</h3>
 
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  角色名称 *
+                  {t("tenantAdmin.roles.roleNameLabel")}
                 </label>
                 <input
                   type="text"
@@ -275,7 +275,7 @@ export default function TenantRolesPanel() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  角色描述
+                  {t("tenantAdmin.roles.descLabel")}
                 </label>
                 <textarea
                   value={newRoleDescription}
@@ -296,13 +296,13 @@ export default function TenantRolesPanel() {
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
               >
-                取消
+                {t("tenantAdmin.roles.cancel")}
               </button>
               <button
                 onClick={handleEditRole}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
               >
-                保存
+                {t("tenantAdmin.roles.save")}
               </button>
             </div>
           </div>

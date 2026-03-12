@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { CTAButton, Input } from "@/ui/elements";
 import { fetch } from "@/utils";
+import { useTranslation } from "react-i18next";
 
 export default function PermissionsPanel() {
+  const { t } = useTranslation();
   const [principalId, setPrincipalId] = useState("");
   const [datasetIds, setDatasetIds] = useState("");
   const [permissionType, setPermissionType] = useState("read");
@@ -28,12 +30,12 @@ export default function PermissionsPanel() {
         body: formData.toString(),
       });
 
-      alert("权限分配成功！");
+      alert(t("admin.permissions.grantSuccess"));
       setPrincipalId("");
       setDatasetIds("");
     } catch (error) {
-      console.error("分配权限失败:", error);
-      alert("分配权限失败，请检查输入的ID是否正确");
+      console.error("Grant permission failed:", error);
+      alert(t("admin.permissions.grantError"));
     } finally {
       setIsGranting(false);
     }
@@ -42,15 +44,15 @@ export default function PermissionsPanel() {
   return (
     <div className="space-y-6">
       <div className="bg-gray-50 p-4 rounded-lg">
-        <h3 className="text-lg font-semibold mb-4">分配数据集权限</h3>
+        <h3 className="text-lg font-semibold mb-4">{t("admin.permissions.title")}</h3>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">
-              Principal ID（用户ID 或 角色ID）
+              {t("admin.permissions.principalIdLabel")}
             </label>
             <Input
               type="text"
-              placeholder="粘贴用户或角色的UUID"
+              placeholder={t("admin.permissions.principalIdPlaceholder")}
               value={principalId}
               onChange={(e) => setPrincipalId(e.target.value)}
             />
@@ -58,27 +60,27 @@ export default function PermissionsPanel() {
 
           <div>
             <label className="block text-sm font-medium mb-2">
-              数据集 ID（多个用逗号分隔）
+              {t("admin.permissions.datasetIdLabel")}
             </label>
             <Input
               type="text"
-              placeholder="例如: uuid1, uuid2, uuid3"
+              placeholder={t("admin.permissions.datasetIdPlaceholder")}
               value={datasetIds}
               onChange={(e) => setDatasetIds(e.target.value)}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">权限类型</label>
+            <label className="block text-sm font-medium mb-2">{t("admin.permissions.permissionTypeLabel")}</label>
             <select
               value={permissionType}
               onChange={(e) => setPermissionType(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
             >
-              <option value="read">Read - 读取数据</option>
-              <option value="write">Write - 写入数据</option>
-              <option value="delete">Delete - 删除数据</option>
-              <option value="share">Share - 分享权限</option>
+              <option value="read">{t("admin.permissions.optionRead")}</option>
+              <option value="write">{t("admin.permissions.optionWrite")}</option>
+              <option value="delete">{t("admin.permissions.optionDelete")}</option>
+              <option value="share">{t("admin.permissions.optionShare")}</option>
             </select>
           </div>
 
@@ -87,21 +89,21 @@ export default function PermissionsPanel() {
             disabled={isGranting || !principalId.trim() || !datasetIds.trim()}
             className="w-full"
           >
-            {isGranting ? "分配中..." : "分配权限"}
+            {isGranting ? t("admin.permissions.assigning") : t("admin.permissions.assignButton")}
           </CTAButton>
         </div>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-semibold mb-2">💡 使用说明</h4>
+        <h4 className="font-semibold mb-2">{t("admin.permissions.usageTitle")}</h4>
         <ul className="text-sm text-gray-700 space-y-1">
-          <li>• 从"用户管理"或"角色管理"面板复制 Principal ID</li>
-          <li>• 从 Dashboard 的 Datasets 面板查看数据集 ID</li>
-          <li>• 权限继承顺序：用户权限 → 角色权限 → 租户权限</li>
-          <li>• Read: 可查询和可视化数据</li>
-          <li>• Write: 可添加、修改数据</li>
-          <li>• Delete: 可删除整个数据集</li>
-          <li>• Share: 可将权限分享给其他用户</li>
+          <li>• {t("admin.permissions.usage1")}</li>
+          <li>• {t("admin.permissions.usage2")}</li>
+          <li>• {t("admin.permissions.usage3")}</li>
+          <li>• {t("admin.permissions.usage4")}</li>
+          <li>• {t("admin.permissions.usage5")}</li>
+          <li>• {t("admin.permissions.usage6")}</li>
+          <li>• {t("admin.permissions.usage7")}</li>
         </ul>
       </div>
     </div>

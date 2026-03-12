@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { fetch } from "@/utils";
 import { toast } from "react-hot-toast";
 import { CTAButton } from "@/ui/elements";
@@ -32,6 +33,7 @@ export default function TenantApiKeysPanel() {
     key: string;
     name: string;
   } | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchApiKeys();
@@ -41,16 +43,16 @@ export default function TenantApiKeysPanel() {
     try {
       setLoading(true);
       const response = await fetch("/v1/api-keys");
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
       setApiKeys(data.api_keys || []);
     } catch (error) {
-      console.error("获取API Keys失败:", error);
-      toast.error("获取API Keys失败");
+      console.error("Failed to fetch API Keys:", error);
+      toast.error("Failed to fetch API Keys");
     } finally {
       setLoading(false);
     }
@@ -58,7 +60,7 @@ export default function TenantApiKeysPanel() {
 
   const handleCreateKey = async () => {
     if (!newKeyData.name.trim()) {
-      toast.error("请输入Key名称");
+      toast.error(t("tenantAdmin.apiKeys.keyNameFormLabel"));
       return;
     }
 
@@ -80,25 +82,25 @@ export default function TenantApiKeysPanel() {
           key: data.api_key.key,
           name: data.api_key.name,
         });
-        toast.success("API Key创建成功！");
+        toast.success(t("tenantAdmin.apiKeys.keyCreatedMsg"));
         setShowCreateForm(false);
         setNewKeyData({ name: "", expires_in_days: "" });
         await fetchApiKeys();
       } else {
         const data = await response.json();
-        toast.error(data.detail || "创建失败");
+        toast.error(data.detail || "Create failed");
       }
     } catch (error) {
-      console.error("创建API Key失败:", error);
-      toast.error("创建失败，请稍后重试");
+      console.error("Failed to create API Key:", error);
+      toast.error("Create failed, please try again later");
     } finally {
       setCreating(false);
     }
   };
 
   const handleToggleActive = async (keyId: string, currentActive: boolean) => {
-    const action = currentActive ? "禁用" : "启用";
-    if (!confirm(`确认要${action}此API Key吗？${currentActive ? '\n\n禁用后，使用此Key的应用将无法访问API。' : ''}`)) {
+    const action = currentActive ? t("tenantAdmin.apiKeys.disable") : t("tenantAdmin.apiKeys.enable");
+    if (!confirm(`${action} this API Key?`)) {
       return;
     }
 
@@ -110,20 +112,20 @@ export default function TenantApiKeysPanel() {
       });
 
       if (response.ok) {
-        toast.success(`${action}成功！`);
+        toast.success(`${action} OK`);
         await fetchApiKeys();
       } else {
         const data = await response.json();
-        toast.error(data.detail || `${action}失败`);
+        toast.error(data.detail || `${action} failed`);
       }
     } catch (error) {
-      console.error(`${action}失败:`, error);
-      toast.error(`${action}失败，请稍后重试`);
+      console.error(`${action} failed:`, error);
+      toast.error(`${action} failed, please try again later`);
     }
   };
 
   const handleRevokeKey = async (keyId: string, keyName: string) => {
-    if (!confirm(`确认要撤销API Key "${keyName}"吗？\n\n⚠️ 此操作不可恢复！撤销后，使用此Key的应用将立即无法访问API。`)) {
+    if (!confirm(`${t("tenantAdmin.apiKeys.revoke")} API Key "${keyName}"?\n\nThis action cannot be undone!`)) {
       return;
     }
 
@@ -133,26 +135,25 @@ export default function TenantApiKeysPanel() {
       });
 
       if (response.ok) {
-        toast.success("API Key已撤销！");
+        toast.success(t("tenantAdmin.apiKeys.revoke") + " OK");
         await fetchApiKeys();
       } else {
         const data = await response.json();
-        toast.error(data.detail || "撤销失败");
+        toast.error(data.detail || "Revoke failed");
       }
     } catch (error) {
-      console.error("撤销失败:", error);
-      toast.error("撤销失败，请稍后重试");
+      console.error("Revoke failed:", error);
+      toast.error("Revoke failed, please try again later");
     }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success("已复制到剪贴板！");
+    toast.success(t("tenantAdmin.apiKeys.copiedToClipboard"));
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "永不过期";
-    return new Date(dateStr).toLocaleString("zh-CN");
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString();
   };
 
   if (loading) {
@@ -165,7 +166,7 @@ export default function TenantApiKeysPanel() {
 
   return (
     <div className="space-y-6">
-      {/* 创建成功提示 */}
+      {/* Key created success banner */}
       {createdKey && (
         <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6">
           <div className="flex items-start">
@@ -175,18 +176,18 @@ export default function TenantApiKeysPanel() {
               </svg>
             </div>
             <div className="ml-3 flex-1">
-              <h3 className="text-lg font-medium text-yellow-900">⚠️ 重要：请立即保存您的API Key！</h3>
+              <h3 className="text-lg font-medium text-yellow-900">{t("tenantAdmin.apiKeys.importantSave")}</h3>
               <div className="mt-2 text-sm text-yellow-800">
-                <p>API Key创建成功！出于安全考虑，此Key仅显示一次，关闭后将无法再次查看。</p>
+                <p>{t("tenantAdmin.apiKeys.keyCreatedMsg")}</p>
               </div>
               <div className="mt-4">
                 <div className="bg-white rounded-lg p-4 border border-yellow-300">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">Key名称：</span>
+                    <span className="text-sm font-medium text-gray-700">{t("tenantAdmin.apiKeys.keyNameLabel")}</span>
                     <span className="text-sm text-gray-900">{createdKey.name}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">API Key：</span>
+                    <span className="text-sm font-medium text-gray-700">{t("tenantAdmin.apiKeys.apiKeyLabel")}</span>
                     <div className="flex items-center space-x-2">
                       <code className="text-sm bg-gray-100 px-3 py-1 rounded font-mono">
                         {createdKey.key}
@@ -195,7 +196,7 @@ export default function TenantApiKeysPanel() {
                         onClick={() => copyToClipboard(createdKey.key)}
                         className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                       >
-                        复制
+                        {t("tenantAdmin.apiKeys.copy")}
                       </button>
                     </div>
                   </div>
@@ -206,7 +207,7 @@ export default function TenantApiKeysPanel() {
                   onClick={() => setCreatedKey(null)}
                   className="text-sm font-medium text-yellow-900 hover:text-yellow-700"
                 >
-                  我已保存，关闭此提示 →
+                  {t("tenantAdmin.apiKeys.savedDismiss")}
                 </button>
               </div>
             </div>
@@ -214,59 +215,58 @@ export default function TenantApiKeysPanel() {
         </div>
       )}
 
-      {/* 页面说明 */}
+      {/* Page description */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">💡 什么是API Keys？</h3>
+        <h3 className="text-sm font-medium text-blue-900 mb-2">{t("tenantAdmin.apiKeys.whatIsApiKey")}</h3>
         <p className="text-sm text-blue-800">
-          API Keys用于程序化访问Cognee API，适用于CLI工具、脚本、自动化任务和第三方集成。
-          与Cookie/JWT认证相比，API Key更适合长期运行的服务和自动化场景。
+          {t("tenantAdmin.apiKeys.apiKeyDesc")}
         </p>
       </div>
 
-      {/* 创建按钮和表单 */}
+      {/* Create button and form */}
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">API Keys 管理</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t("tenantAdmin.apiKeys.manageTitle")}</h2>
         {!showCreateForm && (
           <CTAButton onClick={() => setShowCreateForm(true)}>
-            + 创建新的API Key
+            {t("tenantAdmin.apiKeys.createButton")}
           </CTAButton>
         )}
       </div>
 
       {showCreateForm && (
         <div className="bg-white border border-gray-300 rounded-lg p-6 shadow-sm">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">创建新的API Key</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">{t("tenantAdmin.apiKeys.createFormTitle")}</h3>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Key名称 *
+                {t("tenantAdmin.apiKeys.keyNameFormLabel")}
               </label>
               <input
                 type="text"
                 value={newKeyData.name}
                 onChange={(e) => setNewKeyData({ ...newKeyData, name: e.target.value })}
-                placeholder="例如：生产环境Key、CLI工具Key"
+                placeholder={t("tenantAdmin.apiKeys.keyNamePlaceholder")}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-500">
-                为不同用途创建不同的Key，方便管理和追踪
+                {t("tenantAdmin.apiKeys.keyNameHint")}
               </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                有效期（天）
+                {t("tenantAdmin.apiKeys.validityLabel")}
               </label>
               <input
                 type="number"
                 value={newKeyData.expires_in_days}
                 onChange={(e) => setNewKeyData({ ...newKeyData, expires_in_days: e.target.value })}
-                placeholder="留空表示永不过期"
+                placeholder={t("tenantAdmin.apiKeys.validityPlaceholder")}
                 min="1"
                 max="3650"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <p className="mt-1 text-xs text-gray-500">
-                建议：测试Key设置30天，生产Key可设置365天或永不过期
+                {t("tenantAdmin.apiKeys.validityHint")}
               </p>
             </div>
             <div className="flex space-x-3">
@@ -274,7 +274,7 @@ export default function TenantApiKeysPanel() {
                 onClick={handleCreateKey}
                 disabled={creating || !newKeyData.name.trim()}
               >
-                {creating ? "创建中..." : "创建"}
+                {creating ? t("tenantAdmin.apiKeys.creating") : t("tenantAdmin.apiKeys.create")}
               </CTAButton>
               <button
                 onClick={() => {
@@ -283,21 +283,21 @@ export default function TenantApiKeysPanel() {
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
               >
-                取消
+                {t("tenantAdmin.apiKeys.cancel")}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* API Keys列表 */}
+      {/* API Keys list */}
       {apiKeys.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
           <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">暂无API Keys</h3>
-          <p className="mt-1 text-sm text-gray-500">点击上方按钮创建您的第一个API Key</p>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">{t("tenantAdmin.apiKeys.noApiKeys")}</h3>
+          <p className="mt-1 text-sm text-gray-500">{t("tenantAdmin.apiKeys.noApiKeysHint")}</p>
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -305,22 +305,22 @@ export default function TenantApiKeysPanel() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  名称
+                  {t("tenantAdmin.apiKeys.colName")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Key前缀
+                  {t("tenantAdmin.apiKeys.colPrefix")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  状态
+                  {t("tenantAdmin.apiKeys.colStatus")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  最后使用
+                  {t("tenantAdmin.apiKeys.colLastUsed")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  过期时间
+                  {t("tenantAdmin.apiKeys.colExpiry")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  操作
+                  {t("tenantAdmin.apiKeys.colActions")}
                 </th>
               </tr>
             </thead>
@@ -330,7 +330,7 @@ export default function TenantApiKeysPanel() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{key.name}</div>
                     <div className="text-xs text-gray-500">
-                      创建于 {formatDate(key.created_at)}
+                      {t("tenantAdmin.apiKeys.createdAt", { date: formatDate(key.created_at) })}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -346,27 +346,27 @@ export default function TenantApiKeysPanel() {
                           : "bg-red-100 text-red-800"
                       }`}
                     >
-                      {key.is_active ? "启用" : "禁用"}
+                      {key.is_active ? t("tenantAdmin.apiKeys.enabled") : t("tenantAdmin.apiKeys.disabled")}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {key.last_used_at ? formatDate(key.last_used_at) : "从未使用"}
+                    {key.last_used_at ? formatDate(key.last_used_at) : t("tenantAdmin.apiKeys.neverUsed")}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(key.expires_at)}
+                    {key.expires_at ? formatDate(key.expires_at) : t("tenantAdmin.apiKeys.neverExpires")}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm space-x-3">
                     <button
                       onClick={() => handleToggleActive(key.id, key.is_active)}
                       className={key.is_active ? "text-yellow-600 hover:text-yellow-800" : "text-green-600 hover:text-green-800"}
                     >
-                      {key.is_active ? "禁用" : "启用"}
+                      {key.is_active ? t("tenantAdmin.apiKeys.disable") : t("tenantAdmin.apiKeys.enable")}
                     </button>
                     <button
                       onClick={() => handleRevokeKey(key.id, key.name)}
                       className="text-red-600 hover:text-red-800"
                     >
-                      撤销
+                      {t("tenantAdmin.apiKeys.revoke")}
                     </button>
                   </td>
                 </tr>
@@ -376,11 +376,11 @@ export default function TenantApiKeysPanel() {
         </div>
       )}
 
-      {/* 使用说明 */}
+      {/* Usage instructions */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-2">📖 使用说明</h3>
+        <h3 className="text-sm font-medium text-gray-900 mb-2">{t("tenantAdmin.apiKeys.usageTitle")}</h3>
         <div className="text-sm text-gray-700 space-y-3">
-          <p><strong>1. 在Python脚本中使用：</strong></p>
+          <p><strong>{t("tenantAdmin.apiKeys.usagePython")}</strong></p>
           <pre className="bg-gray-800 text-gray-100 p-3 rounded text-xs overflow-x-auto">
 {`import requests
 
@@ -391,8 +391,8 @@ response = requests.post(
     headers=headers
 )`}
           </pre>
-          
-          <p className="mt-3"><strong>2. 在Java中使用：</strong></p>
+
+          <p className="mt-3"><strong>{t("tenantAdmin.apiKeys.usageJava")}</strong></p>
           <pre className="bg-gray-800 text-gray-100 p-3 rounded text-xs overflow-x-auto">
 {`import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -410,24 +410,24 @@ HttpRequest request = HttpRequest.newBuilder()
     .build();
 
 HttpResponse<String> response = client.send(
-    request, 
+    request,
     HttpResponse.BodyHandlers.ofString()
 );`}
           </pre>
-          
-          <p className="mt-3"><strong>3. 在CLI中使用：</strong></p>
+
+          <p className="mt-3"><strong>{t("tenantAdmin.apiKeys.usageCli")}</strong></p>
           <pre className="bg-gray-800 text-gray-100 p-3 rounded text-xs overflow-x-auto">
 {`export COGNEE_API_KEY="your_api_key_here"
 cognee cognify --dataset my_dataset`}
           </pre>
-          
-          <p className="mt-3"><strong>4. 安全建议：</strong></p>
+
+          <p className="mt-3"><strong>{t("tenantAdmin.apiKeys.usageSecurity")}</strong></p>
           <ul className="list-disc list-inside ml-4 space-y-1">
-            <li>⚠️ <strong>完整API Key仅在创建时显示一次，请务必立即保存</strong></li>
-            <li>不要在代码中硬编码API Key，使用环境变量</li>
-            <li>为不同环境（开发/生产）使用不同的Key</li>
-            <li>定期轮换API Key以提高安全性</li>
-            <li>如果Key泄露，立即撤销并创建新的Key</li>
+            <li>{t("tenantAdmin.apiKeys.secTip1")}</li>
+            <li>{t("tenantAdmin.apiKeys.secTip2")}</li>
+            <li>{t("tenantAdmin.apiKeys.secTip3")}</li>
+            <li>{t("tenantAdmin.apiKeys.secTip4")}</li>
+            <li>{t("tenantAdmin.apiKeys.secTip5")}</li>
           </ul>
         </div>
       </div>

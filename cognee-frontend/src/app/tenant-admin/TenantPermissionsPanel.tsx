@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
 import { fetch } from "@/utils";
 
@@ -23,6 +24,7 @@ export default function TenantPermissionsPanel() {
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [rolePermissions, setRolePermissions] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchPermissions();
@@ -37,25 +39,23 @@ export default function TenantPermissionsPanel() {
 
   const fetchPermissions = async () => {
     try {
-      // 获取所有功能权限列表
       const response = await fetch("/v1/permissions/function-permissions");
       const data = await response.json();
       setPermissions(data.permissions || []);
     } catch (error) {
-      console.error("获取权限列表失败:", error);
-      toast.error("获取权限列表失败");
+      console.error("Failed to get permissions:", error);
+      toast.error("Failed to get permissions");
     }
   };
 
   const fetchRoles = async () => {
     try {
-      // 获取当前租户的角色列表
       const response = await fetch("/v1/permissions/my-tenant/roles");
       const data = await response.json();
       setRoles(data.roles || []);
     } catch (error) {
-      console.error("获取角色列表失败:", error);
-      toast.error("获取角色列表失败");
+      console.error("Failed to get roles:", error);
+      toast.error("Failed to get roles");
     }
   };
 
@@ -67,8 +67,8 @@ export default function TenantPermissionsPanel() {
       const permissionIds = data.permissions?.map((p: Permission) => p.id) || [];
       setRolePermissions(new Set(permissionIds));
     } catch (error) {
-      console.error("获取角色权限失败:", error);
-      toast.error("获取角色权限失败");
+      console.error("Failed to get role permissions:", error);
+      toast.error("Failed to get role permissions");
     } finally {
       setLoading(false);
     }
@@ -76,36 +76,32 @@ export default function TenantPermissionsPanel() {
 
   const handleTogglePermission = async (permissionId: string, hasPermission: boolean) => {
     if (!selectedRole) {
-      toast.error("请先选择角色");
+      toast.error(t("tenantAdmin.permissions.selectRoleFirst"));
       return;
     }
 
     try {
       if (hasPermission) {
-        // 移除权限
         await fetch(`/v1/permissions/roles/${selectedRole}/permissions/${permissionId}`, {
           method: "DELETE",
         });
-        toast.success("权限已移除");
+        toast.success("Permission removed");
       } else {
-        // 添加权限
         await fetch(`/v1/permissions/roles/${selectedRole}/permissions/${permissionId}`, {
           method: "POST",
         });
-        toast.success("权限已添加");
+        toast.success("Permission added");
       }
 
-      // 刷新角色权限
       await fetchRolePermissions(selectedRole);
     } catch (error) {
-      console.error("更新权限失败:", error);
-      toast.error("更新权限失败");
+      console.error("Update permission failed:", error);
+      toast.error("Update permission failed");
     }
   };
 
-  // 按类别分组权限
   const groupedPermissions = permissions.reduce((acc, perm) => {
-    const category = perm.category || "其他";
+    const category = perm.category || "Other";
     if (!acc[category]) {
       acc[category] = [];
     }
@@ -116,23 +112,22 @@ export default function TenantPermissionsPanel() {
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 p-4 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">功能权限管理</h3>
+        <h3 className="font-semibold text-blue-900 mb-2">{t("tenantAdmin.permissions.title")}</h3>
         <p className="text-sm text-blue-700">
-          为角色分配功能权限，控制用户可以访问的菜单和执行的操作。
+          {t("tenantAdmin.permissions.description")}
         </p>
       </div>
 
-      {/* 角色选择 */}
       <div className="bg-white p-4 rounded-lg border border-gray-200">
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          选择角色
+          {t("tenantAdmin.permissions.selectRoleLabel")}
         </label>
         <select
           value={selectedRole}
           onChange={(e) => setSelectedRole(e.target.value)}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
-          <option value="">-- 请选择角色 --</option>
+          <option value="">{t("tenantAdmin.permissions.selectRolePlaceholder")}</option>
           {roles.map((role) => (
             <option key={role.id} value={role.id}>
               {role.name}
@@ -141,18 +136,17 @@ export default function TenantPermissionsPanel() {
         </select>
       </div>
 
-      {/* 权限列表 */}
       {selectedRole ? (
         loading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600">加载中...</p>
+            <p className="mt-2 text-gray-600">{t("tenantAdmin.permissions.loading")}</p>
           </div>
         ) : (
           <div className="space-y-4">
             {Object.keys(groupedPermissions).length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                暂无可用权限
+                {t("tenantAdmin.permissions.noPermissions")}
               </div>
             ) : (
               Object.entries(groupedPermissions).map(([category, perms]) => (
@@ -171,7 +165,7 @@ export default function TenantPermissionsPanel() {
                             {perm.description && (
                               <div className="text-sm text-gray-600 mt-1">{perm.description}</div>
                             )}
-                            <div className="text-xs text-gray-400 mt-1">代码: {perm.code}</div>
+                            <div className="text-xs text-gray-400 mt-1">{t("tenantAdmin.permissions.permCode")} {perm.code}</div>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -193,7 +187,7 @@ export default function TenantPermissionsPanel() {
         )
       ) : (
         <div className="text-center py-8 text-gray-500">
-          请先选择一个角色以管理其权限
+          {t("tenantAdmin.permissions.selectRoleFirst")}
         </div>
       )}
     </div>

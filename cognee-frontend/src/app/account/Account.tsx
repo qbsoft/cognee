@@ -9,10 +9,12 @@ import Header from "@/ui/Layout/Header";
 import { useAuthenticatedUser } from "@/modules/auth";
 import toast from "react-hot-toast";
 import { fetch } from "@/utils";
+import { useTranslation } from "react-i18next";
 
 export default function Account() {
   const router = useRouter();
   const { user } = useAuthenticatedUser();
+  const { t } = useTranslation();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -29,12 +31,12 @@ export default function Account() {
     e.preventDefault();
 
     if (newPassword !== confirmPassword) {
-      toast.error("两次输入的密码不一致");
+      toast.error(t("account.errors.passwordMismatch"));
       return;
     }
 
     if (newPassword.length < 8) {
-      toast.error("密码长度不能少于8位");
+      toast.error(t("account.errors.passwordTooShort"));
       return;
     }
 
@@ -56,23 +58,23 @@ export default function Account() {
       });
 
       if (!loginResponse.ok) {
-        toast.error("当前密码错误");
+        toast.error(t("account.errors.wrongPassword"));
         setIsChangingPassword(false);
         return;
       }
 
       // TODO: 调用修改密码API（需要后端支持）
       // 暂时显示提示
-      toast.error("修改密码功能正在开发中，请使用忘记密码功能");
+      toast.error(t("account.errors.changePasswordPending"));
       setIsChangingPassword(false);
-      
+
       // 清空表单
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setShowChangePassword(false);
     } catch (error) {
-      toast.error("修改密码失败，请稍后重试");
+      toast.error(t("account.errors.changeFailed"));
       setIsChangingPassword(false);
     }
   };
@@ -92,11 +94,11 @@ export default function Account() {
       }
 
       // 跳转到登录页
-      toast.success("已成功登出");
+      toast.success(t("account.logoutSuccess"));
       router.push("/auth/login");
     } catch (error) {
       console.error("登出失败:", error);
-      toast.error("登出失败，请稍后重试");
+      toast.error(t("account.errors.logoutFailed"));
     }
   };
 
@@ -112,15 +114,15 @@ export default function Account() {
         <div className="flex-1/5 flex flex-col gap-2.5">
           {/* 账户信息 */}
           <div className="py-4 px-5 rounded-xl bg-white">
-            <div className="text-lg font-semibold">账户</div>
-            <div className="text-sm text-gray-400 mb-8">管理您的账户设置。</div>
+            <div className="text-lg font-semibold">{t("account.title")}</div>
+            <div className="text-sm text-gray-400 mb-8">{t("account.subtitle")}</div>
             <div className="space-y-2">
               <div>
-                <span className="text-gray-600">用户名：</span>
+                <span className="text-gray-600">{t("account.username")}</span>
                 <span className="ml-2 font-medium">{account.name}</span>
               </div>
               <div>
-                <span className="text-gray-600">邮箱：</span>
+                <span className="text-gray-600">{t("account.email")}</span>
                 <span className="ml-2 font-medium">{account.email}</span>
               </div>
             </div>
@@ -128,52 +130,52 @@ export default function Account() {
 
           {/* 修改密码 */}
           <div className="py-4 px-5 rounded-xl bg-white">
-            <div className="text-lg font-semibold">密码</div>
-            <div className="text-sm text-gray-400 mb-4">修改您的登录密码。</div>
-            
+            <div className="text-lg font-semibold">{t("account.passwordSection")}</div>
+            <div className="text-sm text-gray-400 mb-4">{t("account.passwordSubtitle")}</div>
+
             {!showChangePassword ? (
-              <CTAButton 
-                className="w-full" 
+              <CTAButton
+                className="w-full"
                 onClick={() => setShowChangePassword(true)}
               >
-                修改密码
+                {t("account.changePassword")}
               </CTAButton>
             ) : (
               <form onSubmit={handleChangePassword} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    当前密码
+                    {t("account.currentPassword")}
                   </label>
                   <Input
                     type="password"
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="请输入当前密码"
+                    placeholder={t("account.currentPasswordPlaceholder")}
                     required
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    新密码
+                    {t("account.newPassword")}
                   </label>
                   <Input
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="请输入新密码（至少8位）"
+                    placeholder={t("account.newPasswordPlaceholder")}
                     required
                     minLength={8}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    确认新密码
+                    {t("account.confirmPassword")}
                   </label>
                   <Input
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="请再次输入新密码"
+                    placeholder={t("account.confirmPasswordPlaceholder")}
                     required
                   />
                 </div>
@@ -183,7 +185,7 @@ export default function Account() {
                     disabled={isChangingPassword}
                     className="flex-1 bg-indigo-600 text-white rounded-lg px-4 py-2 hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    {isChangingPassword ? "修改中..." : "确认修改"}
+                    {isChangingPassword ? t("account.submitting") : t("account.confirmChange")}
                   </button>
                   <button
                     type="button"
@@ -195,7 +197,7 @@ export default function Account() {
                     }}
                     className="flex-1 bg-gray-200 text-gray-700 rounded-lg px-4 py-2 hover:bg-gray-300"
                   >
-                    取消
+                    {t("common.cancel")}
                   </button>
                 </div>
               </form>
@@ -204,13 +206,13 @@ export default function Account() {
 
           {/* 登出 */}
           <div className="py-4 px-5 rounded-xl bg-white">
-            <div className="text-lg font-semibold mb-2">登出</div>
-            <div className="text-sm text-gray-400 mb-4">退出当前账户。</div>
+            <div className="text-lg font-semibold mb-2">{t("account.logoutSection")}</div>
+            <div className="text-sm text-gray-400 mb-4">{t("account.logoutSubtitle")}</div>
             <button
               onClick={handleLogout}
               className="w-full bg-red-600 text-white rounded-lg px-4 py-2 hover:bg-red-700"
             >
-              登出
+              {t("account.logoutButton")}
             </button>
           </div>
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import TenantInfoPanel from "./TenantInfoPanel";
 import TenantUsersPanel from "./TenantUsersPanel";
 import TenantRolesPanel from "./TenantRolesPanel";
@@ -11,6 +12,7 @@ import TenantApiKeysPanel from "./TenantApiKeysPanel";
 export default function TenantAdminPage() {
   const [activeTab, setActiveTab] = useState<"info" | "users" | "roles" | "permissions" | "api-keys">("info");
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50">
@@ -25,11 +27,11 @@ export default function TenantAdminPage() {
               <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              返回主页
+              {t("tenantAdmin.backToHome")}
             </button>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">权限管理中心</h1>
-          <p className="text-gray-600">查看您的租户信息，管理您的用户、角色、权限</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t("tenantAdmin.title")}</h1>
+          <p className="text-gray-600">{t("tenantAdmin.description")}</p>
         </div>
 
         {/* 标签切换 */}
@@ -43,7 +45,7 @@ export default function TenantAdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              租户信息
+              {t("tenantAdmin.tabInfo")}
             </button>
             <button
               onClick={() => setActiveTab("users")}
@@ -53,7 +55,7 @@ export default function TenantAdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              用户管理
+              {t("tenantAdmin.tabUsers")}
             </button>
             <button
               onClick={() => setActiveTab("roles")}
@@ -63,7 +65,7 @@ export default function TenantAdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              角色管理
+              {t("tenantAdmin.tabRoles")}
             </button>
             <button
               onClick={() => setActiveTab("permissions")}
@@ -73,7 +75,7 @@ export default function TenantAdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              权限管理
+              {t("tenantAdmin.tabPermissions")}
             </button>
             <button
               onClick={() => setActiveTab("api-keys")}
@@ -83,7 +85,7 @@ export default function TenantAdminPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              API Keys
+              {t("tenantAdmin.tabApiKeys")}
             </button>
           </nav>
         </div>

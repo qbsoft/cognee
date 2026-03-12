@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import apiFetch from "@/utils/fetch";
 import { CTAButton, GhostButton } from "@/ui/elements";
 import { LoadingIndicator } from "@/ui/App";
@@ -111,6 +112,7 @@ export default function DatasetDetailPage({ params }: DatasetDetailPageProps) {
 
 // Client Component
 function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [dataset, setDataset] = useState<Dataset | null>(null);
@@ -162,7 +164,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       setFiles(data);
     } catch (error: any) {
       console.error("[加载文件列表失败]", error);
-      setError(error?.message || "加载文件列表失败");
+      setError(error?.message || t("datasetDetail.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -248,11 +250,11 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
 
   const handleReprocess = async () => {
     if (files.length === 0) {
-      alert("当前数据集没有文件，无需重新处理。");
+      alert(t("datasetDetail.noFilesToProcess"));
       return;
     }
-    
-    if (!confirm(`确定要重新处理当前数据集下的所有 ${files.length} 个文件吗？\n\n这将重新执行解析、切片和索引流程，以保证数据一致性。`)) {
+
+    if (!confirm(`${t("datasetDetail.reprocessDataset")} (${files.length})?`)) {
       return;
     }
 
@@ -294,7 +296,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       startWebSocketProgress(result.pipelineRunId, allFileIds);
     } catch (error: any) {
       console.error("重新处理失败:", error);
-      alert(`重新处理失败: ${error?.message || "未知错误"}`);
+      alert(`${t("datasetDetail.reprocessFailed")}: ${error?.message || ""}`);
     } finally {
       setActionLoading(false);
     }
@@ -311,7 +313,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       console.error('[WebSocket] 未找到认证token');
       console.warn('[WebSocket] 请确保已登录并重新刷新页面');
       setIsPolling(false);
-      alert('⚠️ 无法获取认证信息\n\n请重新登录后再试。');
+      alert(t("datasetDetail.authError"));
       return;
     }
     
@@ -393,7 +395,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
           if (event.code === 1008) {
             console.error('[WebSocket] 认证失败');
             setIsPolling(false);
-            alert('认证失败，请重新登录');
+            alert(t("datasetDetail.authFailed"));
             return;
           }
           
@@ -403,15 +405,15 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
             console.log(`[WebSocket] 尝试重连 (${reconnectAttempts}/${maxReconnectAttempts})...`);
             setTimeout(connect, 2000 * reconnectAttempts);
           } else {
-            console.error('[WebSocket] 重连失败');
+            console.error('[WebSocket] reconnect failed');
             setIsPolling(false);
-            alert('连接失败，请刷新页面重试');
+            alert(t("datasetDetail.connectionFailed"));
           }
         };
       } catch (error) {
-        console.error('[WebSocket] 创建连接失败:', error);
+        console.error('[WebSocket] failed to create connection:', error);
         setIsPolling(false);
-        alert('连接失败，请刷新页面重试');
+        alert(t("datasetDetail.connectionFailed"));
       }
     };
     
@@ -436,7 +438,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
   const handleDelete = async () => {
     if (selectedFiles.size === 0) return;
     
-    if (!confirm(`⚠️ 警告：确定要删除选中的 ${selectedFiles.size} 个文件吗？\n\n这将永久删除文件及其所有关联数据（切片、图节点、向量索引），操作不可恢复！`)) {
+    if (!confirm(`${t("datasetDetail.selectedCount", { count: selectedFiles.size })} - ${t("common.delete")}?`)) {
       return;
     }
 
@@ -452,12 +454,12 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       });
       
       const result = await response.json();
-      alert(`删除成功！\n已删除: ${result.deletedCount} 个文件\n删除的chunks: ${result.deletedChunkCount}\n删除的nodes: ${result.deletedNodeCount}`);
+      alert(`${t("datasetDetail.deleteSuccess")} (${result.deletedCount})`);
       setSelectedFiles(new Set());
       // 刷新列表
       loadFiles();
     } catch (error: any) {
-      alert(`删除失败: ${error?.message || "未知错误"}`);
+      alert(`${t("datasetDetail.deleteFailed")}: ${error?.message || ""}`);
     } finally {
       setActionLoading(false);
     }
@@ -473,10 +475,10 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       failed: "bg-red-100 text-red-700"
     };
     const labels: Record<string, string> = {
-      pending: "待处理",
-      in_progress: "处理中",
-      completed: "已完成",
-      failed: "失败"
+      pending: t("datasetDetail.status.pending"),
+      in_progress: t("datasetDetail.status.inProgress"),
+      completed: t("datasetDetail.status.completed"),
+      failed: t("datasetDetail.status.failed")
     };
 
     // 根据状态动态渲染图标,避免创建不稳定的对象引用
@@ -502,7 +504,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       return (
         <div className="flex items-center justify-center py-12">
           <LoadingIndicator />
-          <span className="ml-2 text-gray-500">加载中...</span>
+          <span className="ml-2 text-gray-500">{t("datasetDetail.loading")}</span>
         </div>
       );
     }
@@ -511,7 +513,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       return (
         <div className="text-center py-12">
           <p className="text-red-600 mb-4">{error}</p>
-          <GhostButton onClick={loadFiles}>重试</GhostButton>
+          <GhostButton onClick={loadFiles}>{t("datasetDetail.retry")}</GhostButton>
         </div>
       );
     }
@@ -520,7 +522,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
       return (
         <div className="text-center py-12 text-gray-500">
           <FileIcon />
-          <p className="mt-2">暂无文件</p>
+          <p className="mt-2">{t("datasetDetail.noFiles")}</p>
         </div>
       );
     }
@@ -538,12 +540,12 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
                   className="rounded border-gray-300 focus:ring-indigo-500"
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">文件名</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">解析</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">切片</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">图索引</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">向量索引</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">统计</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colFileName")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colParsing")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colChunking")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colGraphIndex")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colVectorIndex")}</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t("datasetDetail.colStats")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -596,13 +598,13 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <BackIcon />
-                <span>返回</span>
+                <span>{t("datasetDetail.back")}</span>
               </button>
               <div className="h-6 w-px bg-gray-200" />
               <div>
-                <div className="text-xs text-indigo-600 font-medium">数据集管理</div>
+                <div className="text-xs text-indigo-600 font-medium">{t("datasetDetail.datasetManagement")}</div>
                 <div className="text-lg font-bold text-gray-900">
-                  {dataset?.name || "加载中..."}
+                  {dataset?.name || t("datasetDetail.loading")}
                 </div>
               </div>
             </div>
@@ -611,7 +613,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
             >
               <SearchIcon />
-              <span>检索查询</span>
+              <span>{t("datasetDetail.querySearch")}</span>
             </button>
           </div>
         </div>
@@ -624,19 +626,19 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-600">
-                已选择 <span className="font-bold text-indigo-600">{selectedFiles.size}</span> 个文件
+                {t("datasetDetail.selectedCount", { count: selectedFiles.size })}
               </span>
               {(isPolling || autoPolling) && (
                 <span className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
                   <LoadingIndicator />
-                  <span>{isPolling ? "正在监控处理进度..." : "处理中，自动刷新..."}</span>
+                  <span>{isPolling ? t("datasetDetail.monitoringProgress") : t("datasetDetail.autoRefreshing")}</span>
                 </span>
               )}
             </div>
             <div className="flex items-center gap-3">
               <GhostButton onClick={loadFiles} disabled={loading}>
                 <RefreshIcon />
-                <span>刷新</span>
+                <span>{t("datasetDetail.refresh")}</span>
               </GhostButton>
               <CTAButton
                 onClick={handleReprocess}
@@ -644,7 +646,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <RefreshIcon />
-                <span>重新处理整个数据集</span>
+                <span>{t("datasetDetail.reprocessDataset")}</span>
               </CTAButton>
               <CTAButton
                 onClick={handleDelete}
@@ -652,7 +654,7 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
                 className="bg-red-600 hover:bg-red-700"
               >
                 <TrashIcon />
-                <span>删除</span>
+                <span>{t("common.delete")}</span>
               </CTAButton>
             </div>
           </div>
@@ -666,19 +668,19 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
                 <LoadingIndicator />
                 <div>
                   <div className="text-sm font-medium text-blue-900">
-                    正在处理数据集...
+                    {t("datasetDetail.processingTitle")}
                   </div>
                   <div className="text-xs text-blue-700 mt-1">
-                    已完成 <span className="font-bold">{processingProgress.completed}</span> / {processingProgress.total} 个文件
+                    {t("datasetDetail.completedProgress", { completed: processingProgress.completed, total: processingProgress.total })}
                     {processingProgress.inProgress > 0 && (
-                      <span className="ml-2">· {processingProgress.inProgress} 个文件处理中</span>
+                      <span className="ml-2">{t("datasetDetail.filesInProgress", { count: processingProgress.inProgress })}</span>
                     )}
                   </div>
                 </div>
               </div>
               {processingProgress.startTime && (
                 <div className="text-xs text-blue-600">
-                  已用时: {Math.round((Date.now() - processingProgress.startTime) / 1000)}秒
+                  {t("datasetDetail.timeElapsed", { seconds: Math.round((Date.now() - processingProgress.startTime) / 1000) })}
                 </div>
               )}
             </div>
@@ -691,9 +693,9 @@ function DatasetDetailPageClient({ datasetId }: { datasetId: string }) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileIcon />
-                <span className="font-semibold text-gray-800">文件列表</span>
+                <span className="font-semibold text-gray-800">{t("datasetDetail.fileList")}</span>
                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                  {files.length} 个文件
+                  {t("datasetDetail.filesCount", { count: files.length })}
                 </span>
               </div>
             </div>
