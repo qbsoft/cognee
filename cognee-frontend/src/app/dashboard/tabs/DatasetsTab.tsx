@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { SearchIcon, DatasetIcon } from "@/ui/Icons";
 import { Dataset } from "@/modules/ingestion/useDatasets";
 import AddDataToCognee from "../AddDataToCognee";
+import addData from "@/modules/ingestion/addData";
+import cognifyDataset from "@/modules/datasets/cognifyDataset";
+import deleteDataset from "@/modules/datasets/deleteDataset";
 
 function UploadIcon() {
   return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
     </svg>
   );
@@ -27,6 +30,14 @@ function SearchBubbleIcon() {
   return (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
   );
 }
@@ -89,9 +100,111 @@ function getDatasetStatus(dataset: Dataset): StatusInfo {
   return { labelKey: "dashboard.datasets.status.pending", className: "bg-yellow-100 text-yellow-700" };
 }
 
-export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData }: DatasetsTabProps) {
+interface DatasetCardProps {
+  dataset: Dataset;
+  onDeleted: () => void;
+}
+
+function DatasetCard({ dataset, onDeleted }: DatasetCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const status = getDatasetStatus(dataset);
+  const fileCount = dataset.data?.length ?? 0;
+
+  const handleUploadFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const { dataset_id, dataset_name } = await addData({ id: dataset.id }, files, false);
+      await cognifyDataset({ id: dataset_id, name: dataset_name, data: [], status: "" }, false);
+      router.push(`/datasets/${dataset_id}?processing=true`);
+    } catch (err) {
+      console.error("Upload failed", err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(t("dashboard.datasets.confirmDelete", { name: dataset.name }))) return;
+    setDeleting(true);
+    try {
+      await deleteDataset({ id: dataset.id });
+      onDeleted();
+    } catch (err) {
+      console.error("Delete failed", err);
+      alert(t("dashboard.datasets.deleteError"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-indigo-200 transition-all flex flex-col">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-2">
+        <h3 className="text-sm font-medium text-gray-900 truncate flex-1 mr-2">{dataset.name}</h3>
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${status.className}`}>
+          {t(status.labelKey)}
+        </span>
+      </div>
+
+      {/* File count */}
+      <p className="text-xs text-gray-400 mb-4">
+        {t("dashboard.datasets.fileCount", { count: fileCount })}
+      </p>
+
+      {/* Actions */}
+      <div className="mt-auto flex items-center justify-between pt-3 border-t border-gray-50">
+        {/* Upload */}
+        <button
+          disabled={uploading}
+          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+          title={t("dashboard.datasets.uploadFiles")}
+          className="relative flex items-center gap-1 text-xs text-gray-500 hover:text-indigo-600 transition-colors disabled:opacity-50"
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleUploadFiles}
+          />
+          <UploadIcon />
+          <span>{uploading ? t("dashboard.datasets.uploading") : t("dashboard.datasets.uploadFiles")}</span>
+        </button>
+
+        {/* View details */}
+        <button
+          onClick={() => router.push(`/datasets/${dataset.id}`)}
+          className="text-xs text-indigo-500 font-medium hover:text-indigo-700 transition-colors"
+        >
+          {t("dashboard.datasets.viewDetails")} →
+        </button>
+
+        {/* Delete */}
+        <button
+          disabled={deleting}
+          onClick={handleDelete}
+          title={t("dashboard.datasets.delete")}
+          className="flex items-center text-gray-300 hover:text-red-500 transition-colors disabled:opacity-50"
+        >
+          <TrashIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData }: DatasetsTabProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredDatasets = useMemo(() => {
@@ -104,12 +217,9 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
   if (datasets.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
-        {/* Icon */}
         <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-6 text-indigo-500">
           <DatasetIcon />
         </div>
-
-        {/* Headline */}
         <h2 className="text-xl font-semibold text-gray-800 mb-2 text-center">
           {t("dashboard.datasets.getStarted")}
         </h2>
@@ -117,7 +227,6 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
           {t("dashboard.datasets.getStartedDesc")}
         </p>
 
-        {/* 3-step guide */}
         <div className="flex flex-col sm:flex-row gap-4 mb-10 w-full max-w-2xl">
           {[
             { icon: <UploadIcon />, titleKey: "dashboard.datasets.step1Title", descKey: "dashboard.datasets.step1Desc", step: "1", color: "indigo" },
@@ -135,7 +244,6 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
           ))}
         </div>
 
-        {/* CTA */}
         <AddDataToCognee
           datasets={datasets}
           refreshDatasets={refreshDatasets}
@@ -177,37 +285,13 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredDatasets.map((dataset) => {
-            const status = getDatasetStatus(dataset);
-            const fileCount = dataset.data?.length ?? 0;
-
-            return (
-              <div
-                key={dataset.id}
-                onClick={() => router.push(`/datasets/${dataset.id}`)}
-                className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-sm font-medium text-gray-900 truncate flex-1 mr-2">
-                    {dataset.name}
-                  </h3>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${status.className}`}>
-                    {t(status.labelKey)}
-                  </span>
-                </div>
-
-                <p className="text-xs text-gray-500 mb-4">
-                  {t("dashboard.datasets.fileCount", { count: fileCount })}
-                </p>
-
-                <div className="flex items-center justify-end">
-                  <span className="text-xs text-indigo-500 font-medium hover:text-indigo-700 transition-colors">
-                    {t("dashboard.datasets.queryLink")}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          {filteredDatasets.map((dataset) => (
+            <DatasetCard
+              key={dataset.id}
+              dataset={dataset}
+              onDeleted={refreshDatasets}
+            />
+          ))}
         </div>
       )}
     </div>

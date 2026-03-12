@@ -192,7 +192,13 @@
                 "inProgress": "处理中",
                 "ready": "已就绪",
                 "pending": "待处理"
-            }
+            },
+            "uploadFiles": "上传文件",
+            "uploading": "上传中...",
+            "viewDetails": "查看详情",
+            "delete": "删除",
+            "confirmDelete": "确定要删除数据集「{{name}}」吗？此操作不可撤销。",
+            "deleteError": "删除失败，请重试"
         },
         "search": {
             "placeholder": "输入搜索问题...",
