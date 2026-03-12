@@ -158,7 +158,7 @@ function DatasetCard({ dataset, onDeleted }: DatasetCardProps) {
   return (
     <div
       className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-indigo-200 transition-all flex flex-col cursor-pointer"
-      onClick={() => router.push(`/datasets/${dataset.id}/settings`)}
+      onClick={() => router.push(`/datasets/${dataset.id}`)}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-2">
