@@ -30,7 +30,12 @@
     "datasets": {
         "noDatasets": "这里没有数据集,点击 + 添加一个",
         "addDataTitle": "添加新数据到数据集?",
-        "selectDataset": "选择数据集"
+        "selectDataset": "选择数据集",
+        "addDataDescLocal": "请选择一个本地数据集来添加数据。如果您还没有数据集，不用担心，我们会自动为您创建一个。",
+        "addDataDescCloud": "请选择一个云端数据集来添加数据。如果您还没有数据集，不用担心，我们会自动为您创建一个。",
+        "selectFiles": "选择文件",
+        "selectedFiles": "已选文件：",
+        "addDataButton": "+ 添加数据"
     },
     "notebooks": {
         "createNew": "创建新笔记本?",
@@ -170,6 +175,15 @@
             "fileCount_one": "{{count}} 个文件",
             "fileCount_other": "{{count}} 个文件",
             "queryLink": "检索查询 →",
+            "getStarted": "开始使用 Cognee",
+            "getStartedDesc": "上传文档，构建知识图谱，智能问答",
+            "step1Title": "上传文档",
+            "step1Desc": "支持 Word、PDF、TXT 等多种格式",
+            "step2Title": "构建知识图谱",
+            "step2Desc": "自动提取实体和关系，建立知识网络",
+            "step3Title": "智能问答",
+            "step3Desc": "基于图谱的语义搜索与推理",
+            "uploadFirst": "上传第一个数据集",
             "status": {
                 "empty": "空",
                 "failed": "有失败",

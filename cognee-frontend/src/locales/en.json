@@ -30,7 +30,12 @@
     "datasets": {
         "noDatasets": "No datasets here, add one by clicking +",
         "addDataTitle": "Add new data to a dataset?",
-        "selectDataset": "Select dataset"
+        "selectDataset": "Select dataset",
+        "addDataDescLocal": "Please select a local dataset to add data in. If you don't have any, don't worry, we will create one for you.",
+        "addDataDescCloud": "Please select a cloud dataset to add data in. If you don't have any, don't worry, we will create one for you.",
+        "selectFiles": "Select files",
+        "selectedFiles": "Selected files:",
+        "addDataButton": "+ Add Data"
     },
     "notebooks": {
         "createNew": "Create a new notebook?",
@@ -170,6 +175,15 @@
             "fileCount_one": "{{count}} file",
             "fileCount_other": "{{count}} files",
             "queryLink": "Query \u2192",
+            "getStarted": "Get Started with Cognee",
+            "getStartedDesc": "Upload documents, build a knowledge graph, and search intelligently",
+            "step1Title": "Upload Documents",
+            "step1Desc": "Supports Word, PDF, TXT and other formats",
+            "step2Title": "Build Knowledge Graph",
+            "step2Desc": "Automatically extract entities and relationships",
+            "step3Title": "Intelligent Q&A",
+            "step3Desc": "Semantic search and graph-based reasoning",
+            "uploadFirst": "Upload First Dataset",
             "status": {
                 "empty": "Empty",
                 "failed": "Has failures",

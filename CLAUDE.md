@@ -16,9 +16,9 @@
 
 ## 当前工作进度
 
-**最后更新**: 2026-03-11 (Phase 23 已完成)
+**最后更新**: 2026-03-12 (Phase 24 前端 i18n 全量国际化 + Phase 22 E2E 验证 已完成)
 
-**正在进行的任务**: 无（Phase 23 已完成，等待用户确认下一步）
+**正在进行的任务**: 无（等待用户确认下一步）
 
 **已完成**:
 
@@ -320,15 +320,23 @@ deb7b119 feat: add graph validation (T2A05)
 - **测试**: 47 个单元测试全部通过（registry 17 + DB models 12 + router 12 + get_llm_client 6）
 - **回归**: 1409 passed, 30 failed（全部预先存在：17 neo4j 缺包 + 2 旧测试未同步 + 1 config 变更）
 
+### Phase 24: 前端全量 i18n 国际化 + Phase 22 E2E 验证 (已完成, 1 commit)
+- 覆盖所有页面：datasets/[datasetId]/page.tsx、search/page.tsx、account/、admin/（6个Panel）、tenant-admin/（5个Panel）、docs/
+- 新增 170+ 翻译键到 en.json + zh.json（datasetDetail / datasetSearch / account / admin / tenantAdmin 命名空间）
+- 语言切换验证：EN/ZH 双语全部正常，TypeScript 0 错误
+- Phase 22 E2E 验证完成：
+  - DB 表自动创建：`user_model_configs` + `user_default_models` ✅
+  - 配置流程：添加 DashScope API Key → Save Config → 状态变 Enabled ✅
+  - Default Models：选择供应商后模型自动填充，保存写入 DB ✅
+  - 数据验证：provider=dashscope，API Key base64编码，task_type=chat，model=qwen-plus ✅
+
 **待规划任务**:
-- Phase 23: 跨文档融合（多文档实体关联、知识图谱合并）——暂缓，待后续规划
+- 跨文档融合（多文档实体关联、知识图谱合并）——暂缓，待后续规划
 
 **下次可继续的工作**:
-- 所有 Phase 0-22 已完成 ✅
+- 所有 Phase 0-24 已完成 ✅
 - **Phase 23 Dashboard 重设计已完成**: 4-Tab 顶部导航布局（数据集/知识图谱/搜索/API），视觉验证通过
-- **Phase 22 模型配置 UI 已完成**: 前端 `/settings/models` 页面可配置 14 个供应商
-  - 需要 E2E 验证: 启动后端 + 前端，测试完整配置流程（添加供应商凭证→连接测试→设置默认模型→搜索使用用户配置）
-  - 需要验证: DB 表自动创建（`user_model_configs` + `user_default_models`）
+- **Phase 22 模型配置 UI 已完成 + E2E 验证通过**: 前端 `/settings/models` 页面可配置 14 个供应商
 - **双场景 RAGAS 精度验证通过** (Phase 20):
   - no-scope（系统自动找文档）: **94.6%** ✅
   - document_scope（指定文档名称）: **95.0%** ✅

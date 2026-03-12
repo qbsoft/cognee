@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 import { SearchView } from "@/ui/Partials";
 import { LoadingIndicator } from "@/ui/App";
@@ -30,6 +31,7 @@ interface CogneeAddWidgetProps {
 }
 
 export default function CogneeAddWidget({ onData, useCloud = false }: CogneeAddWidgetProps) {
+  const { t } = useTranslation();
   const {
     datasets,
     refreshDatasets,
@@ -143,7 +145,7 @@ export default function CogneeAddWidget({ onData, useCloud = false }: CogneeAddW
         <CTAButton type="button" className="relative" disabled={isProcessingFiles}>
           <input disabled={isProcessingFiles} tabIndex={-1} type="file" multiple onChange={handleAddFilesNoDataset} className="absolute w-full h-full cursor-pointer opacity-0" />
           <span className="flex flex-row gap-2 items-center">
-            + Add Data
+            {t("datasets.addDataButton")}
             {isProcessingFiles && <LoadingIndicator />}
           </span>
         </CTAButton>

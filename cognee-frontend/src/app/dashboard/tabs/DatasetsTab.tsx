@@ -7,6 +7,30 @@ import { SearchIcon, DatasetIcon } from "@/ui/Icons";
 import { Dataset } from "@/modules/ingestion/useDatasets";
 import AddDataToCognee from "../AddDataToCognee";
 
+function UploadIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+    </svg>
+  );
+}
+
+function GraphIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function SearchBubbleIcon() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  );
+}
+
 interface DatasetsTabProps {
   datasets: Dataset[];
   refreshDatasets: () => void;
@@ -76,6 +100,52 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
     return datasets.filter((ds) => ds.name.toLowerCase().includes(query));
   }, [datasets, searchQuery]);
 
+  // Empty state: welcoming onboarding experience
+  if (datasets.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 px-4">
+        {/* Icon */}
+        <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-6 text-indigo-500">
+          <DatasetIcon />
+        </div>
+
+        {/* Headline */}
+        <h2 className="text-xl font-semibold text-gray-800 mb-2 text-center">
+          {t("dashboard.datasets.getStarted")}
+        </h2>
+        <p className="text-sm text-gray-500 mb-10 text-center max-w-md">
+          {t("dashboard.datasets.getStartedDesc")}
+        </p>
+
+        {/* 3-step guide */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-10 w-full max-w-2xl">
+          {[
+            { icon: <UploadIcon />, titleKey: "dashboard.datasets.step1Title", descKey: "dashboard.datasets.step1Desc", step: "1", color: "indigo" },
+            { icon: <GraphIcon />, titleKey: "dashboard.datasets.step2Title", descKey: "dashboard.datasets.step2Desc", step: "2", color: "purple" },
+            { icon: <SearchBubbleIcon />, titleKey: "dashboard.datasets.step3Title", descKey: "dashboard.datasets.step3Desc", step: "3", color: "blue" },
+          ].map(({ icon, titleKey, descKey, step, color }) => (
+            <div key={step} className="flex-1 bg-white rounded-xl border border-gray-100 p-5 flex flex-col items-center text-center shadow-sm">
+              <div className={`w-10 h-10 rounded-full bg-${color}-50 flex items-center justify-center text-${color}-500 mb-3`}>
+                {icon}
+              </div>
+              <div className={`text-xs font-bold text-${color}-400 mb-1`}>STEP {step}</div>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">{t(titleKey)}</h3>
+              <p className="text-xs text-gray-500">{t(descKey)}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <AddDataToCognee
+          datasets={datasets}
+          refreshDatasets={refreshDatasets}
+          getDatasetData={getDatasetData}
+          ctaLabel={t("dashboard.datasets.uploadFirst")}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Search bar + Add data */}
@@ -99,15 +169,11 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
         />
       </div>
 
-      {/* Card grid or empty state */}
+      {/* No match */}
       {filteredDatasets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
           <DatasetIcon />
-          <p className="mt-3 text-sm">
-            {datasets.length === 0
-              ? t("dashboard.datasets.empty")
-              : t("dashboard.datasets.noMatch")}
-          </p>
+          <p className="mt-3 text-sm">{t("dashboard.datasets.noMatch")}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

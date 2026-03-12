@@ -17,9 +17,10 @@ interface AddDataToCogneeProps {
   refreshDatasets: () => void;
   getDatasetData?: (datasetId: string) => Promise<any>;
   useCloud?: boolean;
+  ctaLabel?: string;
 }
 
-export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetData, useCloud = false }: AddDataToCogneeProps) {
+export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetData, useCloud = false, ctaLabel }: AddDataToCogneeProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [filesForUpload, setFilesForUpload] = useState<File[]>([]);
@@ -97,10 +98,20 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
 
   return (
     <>
-      <GhostButton onClick={openAddDataModal} className="mb-5 py-1.5 !px-2 text-sm w-full items-center justify-start">
-        <PlusIcon />
-        {t("navigation.addData")}
-      </GhostButton>
+      {ctaLabel ? (
+        <button
+          onClick={openAddDataModal}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
+        >
+          <PlusIcon />
+          {ctaLabel}
+        </button>
+      ) : (
+        <GhostButton onClick={openAddDataModal} className="mb-5 py-1.5 !px-2 text-sm w-full items-center justify-start">
+          <PlusIcon />
+          {t("navigation.addData")}
+        </GhostButton>
+      )}
 
       <Modal isOpen={isAddDataModalOpen}>
         <div className="w-full max-w-2xl">
@@ -108,7 +119,7 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
             <span className="text-2xl">{t("datasets.addDataTitle")}</span>
             <IconButton disabled={isProcessingDataWithCognee} onClick={closeAddDataModal}><CloseIcon /></IconButton>
           </div>
-          <div className="mt-8 mb-6">Please select a {useCloud ? "cloud" : "local"} dataset to add data in.<br /> If you don&apos;t have any, don&apos;t worry, we will create one for you.</div>
+          <div className="mt-8 mb-6">{useCloud ? t("datasets.addDataDescCloud") : t("datasets.addDataDescLocal")}</div>
           <form onSubmit={submitDataToCognee}>
             <div className="max-w-md flex flex-col gap-4">
               <Select defaultValue={datasets.length ? datasets[0].id : ""} name="datasetName">
@@ -120,12 +131,12 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
 
               <NeutralButton className="w-full relative justify-start pl-4">
                 <input onChange={addFiles} required name="files" tabIndex={-1} type="file" multiple className="absolute w-full h-full cursor-pointer opacity-0" />
-                <span>select files</span>
+                <span>{t("datasets.selectFiles")}</span>
               </NeutralButton>
 
               {!!filesForUpload.length && (
                 <div className="pt-4 mt-4 border-t-1 border-t-gray-100">
-                  <div className="mb-1.5">selected files:</div>
+                  <div className="mb-1.5">{t("datasets.selectedFiles")}</div>
                   {filesForUpload.map((file) => (
                     <div key={file.name} className="py-1.5 pl-2 flex flex-row items-center justify-between w-full">
                       <span className="text-sm">{file.name}</span>
