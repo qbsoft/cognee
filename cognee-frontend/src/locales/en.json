@@ -14,7 +14,7 @@
         "loading": "Loading..."
     },
     "navigation": {
-        "addData": "Add data to cognee",
+        "addData": "Add Dataset",
         "notebooks": "Notebooks",
         "instances": "Cognee Instances",
         "sync": "Sync",
@@ -197,6 +197,7 @@
             "uploading": "Uploading...",
             "viewDetails": "View Details",
             "delete": "Delete",
+            "settings": "Settings",
             "confirmDelete": "Delete dataset \"{{name}}\"? This cannot be undone.",
             "deleteError": "Delete failed, please try again"
         },
@@ -214,11 +215,25 @@
                 "SUMMARIES": "Summary Search",
                 "INSIGHTS": "Insights Search",
                 "CHUNKS": "Chunk Search"
-            }
+            },
+            "modeDeep": "Deep Answer",
+            "modeFast": "Quick Search",
+            "history": "History",
+            "historyTitle": "Chat History",
+            "noHistory": "No history yet",
+            "newChat": "New Chat",
+            "noDatasets": "No datasets",
+            "welcomeTitle": "Start asking",
+            "welcomeHint": "Select a dataset and mode, type your question, press Enter to send",
+            "inputPlaceholder": "Type a question... (Enter to send, Shift+Enter for newline)",
+            "inputHint": "Intelligent Q&A powered by knowledge graph"
         },
         "graph": {
             "nodes": "Nodes",
-            "edges": "Edges"
+            "edges": "Edges",
+            "refresh": "Refresh",
+            "loading": "Loading graph...",
+            "noDatasets": "No datasets"
         },
         "api": {
             "serviceStatus": "Service Status",
@@ -595,5 +610,47 @@
             "permCode": "Code:",
             "loading": "Loading..."
         }
+    },
+    "sharing": {
+        "pageTitle": "Dataset Settings",
+        "backToDataset": "Back to Dataset",
+        "tabBasic": "Basic Info",
+        "tabSharing": "Share Settings",
+        "datasetName": "Dataset Name",
+        "save": "Save",
+        "saveSuccess": "Saved successfully",
+        "saveError": "Save failed, please try again",
+        "myGroups": "My Share Groups",
+        "createGroup": "New Group",
+        "groupName": "Group name",
+        "memberCount": "{{count}} member(s)",
+        "datasetCount": "{{count}} dataset(s)",
+        "manage": "Manage Members",
+        "noGroups": "No share groups yet, create one first",
+        "sharedWith": "This dataset is shared with",
+        "shareToGroup": "Share with Group",
+        "notShared": "Not shared with any group yet",
+        "permRead": "Read-only",
+        "permWrite": "Read & Write",
+        "revokeShare": "Revoke",
+        "manageMembersTitle": "Manage Members",
+        "searchUsers": "Search Tenant Users",
+        "searchUsersPlaceholder": "Search by email...",
+        "noUsersFound": "No matching users found",
+        "addMember": "Add",
+        "currentMembers": "Current Members",
+        "noMembers": "No members yet",
+        "removeMember": "Remove",
+        "confirmDeleteGroup": "Delete share group \"{{name}}\"? Members will lose access granted through this group.",
+        "confirmRevokeShare": "Revoke sharing with \"{{name}}\"? Members will lose access to this dataset.",
+        "noTenantUsers": "No other users in this tenant",
+        "allAdded": "All tenant users have been added",
+        "groupsPageTitle": "Share Group Management",
+        "backToDashboard": "Back to Dashboard",
+        "groupDatasetsTitle": "Shared Datasets",
+        "noGroupDatasets": "No datasets shared with this group",
+        "manageGroupsHint": "Create groups and add members in Share Group Settings, then select a group to share here.",
+        "manageGroupsLink": "Share Group Settings",
+        "noGroupsToShare": "No share groups yet, go to"
     }
 }

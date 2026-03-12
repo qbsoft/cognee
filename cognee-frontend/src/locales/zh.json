@@ -14,7 +14,7 @@
         "loading": "加载中..."
     },
     "navigation": {
-        "addData": "添加数据到 cognee",
+        "addData": "添加数据集",
         "notebooks": "笔记本",
         "instances": "Cognee 实例",
         "sync": "同步",
@@ -197,6 +197,7 @@
             "uploading": "上传中...",
             "viewDetails": "查看详情",
             "delete": "删除",
+            "settings": "配置",
             "confirmDelete": "确定要删除数据集「{{name}}」吗？此操作不可撤销。",
             "deleteError": "删除失败，请重试"
         },
@@ -214,11 +215,25 @@
                 "SUMMARIES": "摘要搜索",
                 "INSIGHTS": "洞察搜索",
                 "CHUNKS": "文本块搜索"
-            }
+            },
+            "modeDeep": "深度回答",
+            "modeFast": "快速检索",
+            "history": "历史",
+            "historyTitle": "历史对话",
+            "noHistory": "暂无历史对话",
+            "newChat": "新对话",
+            "noDatasets": "暂无数据集",
+            "welcomeTitle": "开始提问",
+            "welcomeHint": "选择数据集和模式，输入问题，按 Enter 发送",
+            "inputPlaceholder": "输入问题... (Enter 发送，Shift+Enter 换行)",
+            "inputHint": "基于知识图谱的智能问答"
         },
         "graph": {
             "nodes": "节点",
-            "edges": "连接"
+            "edges": "连接",
+            "refresh": "刷新",
+            "loading": "图谱加载中...",
+            "noDatasets": "暂无数据集"
         },
         "api": {
             "serviceStatus": "服务状态",
@@ -595,5 +610,47 @@
             "permCode": "代码:",
             "loading": "加载中..."
         }
+    },
+    "sharing": {
+        "pageTitle": "数据集配置",
+        "backToDataset": "返回数据集",
+        "tabBasic": "基本信息",
+        "tabSharing": "共享设置",
+        "datasetName": "数据集名称",
+        "save": "保存",
+        "saveSuccess": "保存成功",
+        "saveError": "保存失败，请重试",
+        "myGroups": "我的共享组",
+        "createGroup": "新建组",
+        "groupName": "组名",
+        "memberCount": "{{count}} 人",
+        "datasetCount": "{{count}} 个数据集",
+        "manage": "管理成员",
+        "noGroups": "暂无共享组，请先创建",
+        "sharedWith": "当前数据集已共享给",
+        "shareToGroup": "分享给此组",
+        "notShared": "尚未共享给任何组",
+        "permRead": "只读",
+        "permWrite": "读写",
+        "revokeShare": "撤销",
+        "manageMembersTitle": "管理成员",
+        "searchUsers": "搜索租户用户",
+        "searchUsersPlaceholder": "输入邮箱搜索...",
+        "noUsersFound": "没有匹配的用户",
+        "addMember": "添加",
+        "currentMembers": "当前成员",
+        "noMembers": "暂无成员",
+        "removeMember": "移除",
+        "confirmDeleteGroup": "确定删除共享组「{{name}}」？删除后，成员将失去通过此组获得的访问权限。",
+        "confirmRevokeShare": "确定撤销与「{{name}}」的共享？成员将失去对此数据集的访问权限。",
+        "noTenantUsers": "同一租户下暂无其他用户",
+        "allAdded": "该租户下所有用户均已加入",
+        "groupsPageTitle": "共享组管理",
+        "backToDashboard": "返回主页",
+        "groupDatasetsTitle": "关联数据集",
+        "noGroupDatasets": "未关联任何数据集",
+        "manageGroupsHint": "在「共享组管理」中创建组并添加成员，然后在此处选择共享。",
+        "manageGroupsLink": "共享组管理",
+        "noGroupsToShare": "暂无可用共享组，请先前往"
     }
 }
