@@ -35,7 +35,9 @@
         "addDataDescCloud": "Please select a cloud dataset to add data in. If you don't have any, don't worry, we will create one for you.",
         "selectFiles": "Select files",
         "selectedFiles": "Selected files:",
-        "addDataButton": "+ Add Data"
+        "addDataButton": "+ Add Data",
+        "newDataset": "New dataset",
+        "datasetNamePlaceholder": "Enter dataset name (default: main_dataset)"
     },
     "notebooks": {
         "createNew": "Create a new notebook?",

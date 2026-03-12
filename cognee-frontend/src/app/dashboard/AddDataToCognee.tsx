@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +12,8 @@ import addData from "@/modules/ingestion/addData";
 import { Dataset } from "@/modules/ingestion/useDatasets";
 import cognifyDataset from "@/modules/datasets/cognifyDataset";
 
+const NEW_DATASET_VALUE = "__new__";
+
 interface AddDataToCogneeProps {
   datasets: Dataset[];
   refreshDatasets: () => void;
@@ -24,6 +26,17 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
   const { t } = useTranslation();
   const router = useRouter();
   const [filesForUpload, setFilesForUpload] = useState<File[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>(
+    datasets.length ? datasets[0].id : NEW_DATASET_VALUE
+  );
+  const [newDatasetName, setNewDatasetName] = useState<string>("");
+
+  // sync default selection if datasets list changes (e.g. after modal opens)
+  useEffect(() => {
+    if (!datasets.length) {
+      setSelectedDatasetId(NEW_DATASET_VALUE);
+    }
+  }, [datasets.length]);
 
   const addFiles = useCallback((event: FormEvent<HTMLInputElement>) => {
     const formElements = event.currentTarget;
@@ -45,15 +58,13 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
       return;
     }
 
-    const formElements = event!.currentTarget;
-    const datasetId = formElements.datasetName.value;
+    const isNew = selectedDatasetId === NEW_DATASET_VALUE;
+    const datasetArg = isNew
+      ? { name: newDatasetName.trim() || "main_dataset" }
+      : { id: selectedDatasetId };
 
     return addData(
-      datasetId ? {
-        id: datasetId,
-      } : {
-        name: "main_dataset",
-      },
+      datasetArg,
       filesForUpload,
       useCloud
     )
@@ -86,7 +97,7 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
         alert(`Failed to add data: ${error.message}`);
         throw error;
       });
-  }, [filesForUpload, refreshDatasets, useCloud, router]);
+  }, [filesForUpload, refreshDatasets, useCloud, router, selectedDatasetId, newDatasetName]);
 
   const {
     isModalOpen: isAddDataModalOpen,
@@ -122,12 +133,26 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
           <div className="mt-8 mb-6">{useCloud ? t("datasets.addDataDescCloud") : t("datasets.addDataDescLocal")}</div>
           <form onSubmit={submitDataToCognee}>
             <div className="max-w-md flex flex-col gap-4">
-              <Select defaultValue={datasets.length ? datasets[0].id : ""} name="datasetName">
-                {!datasets.length && <option value="">main_dataset</option>}
+              <Select
+                value={selectedDatasetId}
+                name="datasetName"
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedDatasetId(e.target.value)}
+              >
+                <option value={NEW_DATASET_VALUE}>＋ {t("datasets.newDataset")}</option>
                 {datasets.map((dataset: Dataset) => (
                   <option key={dataset.id} value={dataset.id}>{dataset.name}</option>
                 ))}
               </Select>
+
+              {selectedDatasetId === NEW_DATASET_VALUE && (
+                <input
+                  type="text"
+                  value={newDatasetName}
+                  onChange={(e) => setNewDatasetName(e.target.value)}
+                  placeholder={t("datasets.datasetNamePlaceholder")}
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors"
+                />
+              )}
 
               <NeutralButton className="w-full relative justify-start pl-4">
                 <input onChange={addFiles} required name="files" tabIndex={-1} type="file" multiple className="absolute w-full h-full cursor-pointer opacity-0" />

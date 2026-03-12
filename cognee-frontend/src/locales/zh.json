@@ -35,7 +35,9 @@
         "addDataDescCloud": "请选择一个云端数据集来添加数据。如果您还没有数据集，不用担心，我们会自动为您创建一个。",
         "selectFiles": "选择文件",
         "selectedFiles": "已选文件：",
-        "addDataButton": "+ 添加数据"
+        "addDataButton": "+ 添加数据",
+        "newDataset": "新建数据集",
+        "datasetNamePlaceholder": "输入数据集名称（默认：main_dataset）"
     },
     "notebooks": {
         "createNew": "创建新笔记本?",
