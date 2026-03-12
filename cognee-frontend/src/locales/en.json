@@ -226,7 +226,8 @@
             "welcomeTitle": "Start asking",
             "welcomeHint": "Select a dataset and mode, type your question, press Enter to send",
             "inputPlaceholder": "Type a question... (Enter to send, Shift+Enter for newline)",
-            "inputHint": "Intelligent Q&A powered by knowledge graph"
+            "inputHint": "Intelligent Q&A powered by knowledge graph",
+            "lockedHint": "Cannot modify while viewing history. Click \"+ New Chat\" to start over"
         },
         "graph": {
             "nodes": "Nodes",

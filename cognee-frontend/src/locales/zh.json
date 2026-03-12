@@ -226,7 +226,8 @@
             "welcomeTitle": "开始提问",
             "welcomeHint": "选择数据集和模式，输入问题，按 Enter 发送",
             "inputPlaceholder": "输入问题... (Enter 发送，Shift+Enter 换行)",
-            "inputHint": "基于知识图谱的智能问答"
+            "inputHint": "基于知识图谱的智能问答",
+            "lockedHint": "查看历史对话时无法修改，请点击「+ 新对话」重新开始"
         },
         "graph": {
             "nodes": "节点",

@@ -279,7 +279,10 @@ export default function SearchTab() {
       <div className="flex items-center gap-3 px-6 py-3 border-b border-gray-100 bg-white shrink-0">
         {/* Dataset selector */}
         {datasets.length > 0 ? (
-          <div className="relative">
+          <div
+            className="relative"
+            title={currentSession ? t("dashboard.search.lockedHint") : undefined}
+          >
             <select
               value={selectedDatasetId}
               onChange={(e) => setSelectedDatasetId(e.target.value)}
@@ -301,7 +304,10 @@ export default function SearchTab() {
         )}
 
         {/* Search type segmented control */}
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0">
+        <div
+          className="flex rounded-lg border border-gray-200 overflow-hidden shrink-0"
+          title={currentSession ? t("dashboard.search.lockedHint") : undefined}
+        >
           {(
             [
               { value: "GRAPH_COMPLETION", label: t("dashboard.search.modeDeep") },
