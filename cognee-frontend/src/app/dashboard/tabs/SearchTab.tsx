@@ -84,7 +84,7 @@ function parseSearchResponse(data: unknown): string {
 
 export default function SearchTab() {
   const { t } = useTranslation();
-  const { datasets } = useDatasets();
+  const { datasets, refreshDatasets } = useDatasets();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Toolbar state
@@ -103,6 +103,11 @@ export default function SearchTab() {
 
   // Input
   const [input, setInput] = useState("");
+
+  // Load datasets on mount
+  useEffect(() => {
+    refreshDatasets();
+  }, [refreshDatasets]);
 
   // Auto-scroll to bottom
   useEffect(() => {
