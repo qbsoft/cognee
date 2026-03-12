@@ -42,6 +42,15 @@ function TrashIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
 interface DatasetsTabProps {
   datasets: Dataset[];
   refreshDatasets: () => void;
@@ -147,10 +156,15 @@ function DatasetCard({ dataset, onDeleted }: DatasetCardProps) {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-indigo-200 transition-all flex flex-col">
+    <div
+      className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-indigo-200 transition-all flex flex-col cursor-pointer"
+      onClick={() => router.push(`/datasets/${dataset.id}/settings`)}
+    >
       {/* Header */}
       <div className="flex items-start justify-between mb-2">
-        <h3 className="text-sm font-medium text-gray-900 truncate flex-1 mr-2">{dataset.name}</h3>
+        <h3 className="text-sm font-medium text-gray-900 truncate flex-1 mr-2 hover:text-indigo-600 transition-colors">
+          {dataset.name}
+        </h3>
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${status.className}`}>
           {t(status.labelKey)}
         </span>
@@ -181,23 +195,26 @@ function DatasetCard({ dataset, onDeleted }: DatasetCardProps) {
           <span>{uploading ? t("dashboard.datasets.uploading") : t("dashboard.datasets.uploadFiles")}</span>
         </button>
 
-        {/* View details */}
-        <button
-          onClick={() => router.push(`/datasets/${dataset.id}`)}
-          className="text-xs text-indigo-500 font-medium hover:text-indigo-700 transition-colors"
-        >
-          {t("dashboard.datasets.viewDetails")} →
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Settings */}
+          <button
+            onClick={(e) => { e.stopPropagation(); router.push(`/datasets/${dataset.id}/settings`); }}
+            title={t("dashboard.datasets.settings")}
+            className="flex items-center text-gray-300 hover:text-indigo-500 transition-colors"
+          >
+            <SettingsIcon />
+          </button>
 
-        {/* Delete */}
-        <button
-          disabled={deleting}
-          onClick={handleDelete}
-          title={t("dashboard.datasets.delete")}
-          className="flex items-center text-gray-300 hover:text-red-500 transition-colors disabled:opacity-50"
-        >
-          <TrashIcon />
-        </button>
+          {/* Delete */}
+          <button
+            disabled={deleting}
+            onClick={handleDelete}
+            title={t("dashboard.datasets.delete")}
+            className="flex items-center text-gray-300 hover:text-red-500 transition-colors disabled:opacity-50"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -228,14 +245,16 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-10 w-full max-w-2xl">
-          {[
-            { icon: <UploadIcon />, titleKey: "dashboard.datasets.step1Title", descKey: "dashboard.datasets.step1Desc", step: "1", color: "indigo" },
-            { icon: <GraphIcon />, titleKey: "dashboard.datasets.step2Title", descKey: "dashboard.datasets.step2Desc", step: "2", color: "purple" },
-            { icon: <SearchBubbleIcon />, titleKey: "dashboard.datasets.step3Title", descKey: "dashboard.datasets.step3Desc", step: "3", color: "blue" },
-          ].map(({ icon, titleKey, descKey, step, color }) => (
+          {(
+            [
+              { Icon: UploadIcon, titleKey: "dashboard.datasets.step1Title", descKey: "dashboard.datasets.step1Desc", step: "1", color: "indigo" },
+              { Icon: GraphIcon, titleKey: "dashboard.datasets.step2Title", descKey: "dashboard.datasets.step2Desc", step: "2", color: "purple" },
+              { Icon: SearchBubbleIcon, titleKey: "dashboard.datasets.step3Title", descKey: "dashboard.datasets.step3Desc", step: "3", color: "blue" },
+            ] as { Icon: () => JSX.Element; titleKey: string; descKey: string; step: string; color: string }[]
+          ).map(({ Icon, titleKey, descKey, step, color }) => (
             <div key={step} className="flex-1 bg-white rounded-xl border border-gray-100 p-5 flex flex-col items-center text-center shadow-sm">
               <div className={`w-10 h-10 rounded-full bg-${color}-50 flex items-center justify-center text-${color}-500 mb-3`}>
-                {icon}
+                <Icon />
               </div>
               <div className={`text-xs font-bold text-${color}-400 mb-1`}>STEP {step}</div>
               <h3 className="text-sm font-semibold text-gray-800 mb-1">{t(titleKey)}</h3>
@@ -255,10 +274,15 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
   }
 
   return (
-    <div className="space-y-4">
-      {/* Search bar + Add data */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-white">
+        <AddDataToCognee
+          datasets={datasets}
+          refreshDatasets={refreshDatasets}
+          getDatasetData={getDatasetData}
+        />
+        <div className="relative ml-auto w-64">
           <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
             <SearchIcon />
           </div>
@@ -267,15 +291,13 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
             placeholder={t("dashboard.datasets.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 transition-colors"
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 focus:bg-white transition-colors"
           />
         </div>
-        <AddDataToCognee
-          datasets={datasets}
-          refreshDatasets={refreshDatasets}
-          getDatasetData={getDatasetData}
-        />
       </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto px-6 py-5 space-y-4">
 
       {/* No match */}
       {filteredDatasets.length === 0 ? (
@@ -294,6 +316,7 @@ export default function DatasetsTab({ datasets, refreshDatasets, getDatasetData 
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
