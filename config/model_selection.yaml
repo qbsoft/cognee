@@ -12,7 +12,7 @@ models:
 
   # 通用提取模型: 摘要、分类等简单结构化任务，速度快成本低
   # 推荐: openai/qwen-turbo-latest (DashScope) 或 gpt-4o-mini (OpenAI)
-  extraction_model: "openai/qwen-turbo-latest"
+  extraction_model: "qwen-turbo-latest"
 
   # 蒸馏模型: 知识蒸馏需要强推理能力，每文档只运行一次，成本可控
   # 留空表示使用 .env 中的 LLM_MODEL (默认 qwen-plus)

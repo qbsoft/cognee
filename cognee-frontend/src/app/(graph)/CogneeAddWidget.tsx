@@ -129,14 +129,14 @@ export default function CogneeAddWidget({ onData, useCloud = false }: CogneeAddW
             <span className="text-white">{dataset.name}</span>
           </div>
           <div className="flex gap-2">
-            <CTAButton type="button" className="relative">
+            <CTAButton type="button" className="relative !rounded-lg !px-3 !h-9 min-w-[2.25rem]">
               <input tabIndex={-1} type="file" multiple onChange={handleAddFiles.bind(null, dataset)} className="absolute w-full h-full cursor-pointer opacity-0" />
               <span className="flex flex-row gap-2 items-center">
                 <AddIcon />
                 {isProcessingFiles && <LoadingIndicator />}
               </span>
             </CTAButton>
-            <NeutralButton onClick={handleSearchClick} type="button">
+            <NeutralButton onClick={handleSearchClick} type="button" className="!rounded-lg !h-9 !px-3">
               <SearchIcon />
             </NeutralButton>
           </div>
@@ -151,10 +151,15 @@ export default function CogneeAddWidget({ onData, useCloud = false }: CogneeAddW
         </CTAButton>
       )}
       <Modal isOpen={isSearchModalOpen}>
-        <div className="relative w-full max-w-3xl h-full max-h-5/6">
-          <GhostButton onClick={closeSearchModal} className="absolute right-2 top-2">
-            <AddIcon className="rotate-45" />
-          </GhostButton>
+        <div className="relative w-full max-w-3xl h-[80vh] mx-4">
+          <button
+            onClick={closeSearchModal}
+            className="absolute right-3 top-3 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           <SearchView />
         </div>
       </Modal>

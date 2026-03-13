@@ -73,6 +73,10 @@ class QdrantAdapter(VectorDBInterface):
 
     name = "Qdrant"
 
+    # 类级别的连接缓存：多个 QdrantAdapter 实例共享同一个 AsyncQdrantClient（按 url 隔离）
+    # 这样 52 个并发 pipeline 不会各自创建独立的连接，避免 Qdrant TCP accept queue 打满
+    _client_cache: dict = {}
+
     def __init__(
         self,
         url: Optional[str],
@@ -82,7 +86,6 @@ class QdrantAdapter(VectorDBInterface):
         self.url = url
         self.api_key = api_key
         self.embedding_engine = embedding_engine
-        self.client: Optional[AsyncQdrantClient] = None
 
     # ── Connection ──────────────────────────────────────────────────
 
@@ -93,21 +96,29 @@ class QdrantAdapter(VectorDBInterface):
           - url empty / ":memory:" → in-memory (ephemeral, for tests)
           - url starts with "http"  → remote server
           - otherwise               → local file persistence (path=url)
+
+        使用类级别缓存（_client_cache），让所有 QdrantAdapter 实例共享同一个
+        AsyncQdrantClient（按 URL 隔离），避免 52 个并发任务各自建立独立连接。
         """
-        if self.client is None:
+        cache_key = self.url or ":memory:"
+        if cache_key not in QdrantAdapter._client_cache:
             if not self.url or self.url == ":memory:":
-                self.client = AsyncQdrantClient(location=":memory:")
+                client = AsyncQdrantClient(location=":memory:")
                 logger.info("Qdrant: connected in-memory mode")
             elif self.url.startswith("http"):
-                self.client = AsyncQdrantClient(
+                # trust_env=False 通过 **kwargs 传给 httpx.AsyncClient，关闭代理读取
+                # 避免 Windows 系统代理（Clash/127.0.0.1:7897）拦截本地 Qdrant 请求
+                client = AsyncQdrantClient(
                     url=self.url,
                     api_key=self.api_key if self.api_key else None,
+                    trust_env=False,
                 )
-                logger.info(f"Qdrant: connected to remote server {self.url}")
+                logger.info(f"Qdrant: connected to remote server {self.url} (proxy disabled, shared client)")
             else:
-                self.client = AsyncQdrantClient(path=self.url)
+                client = AsyncQdrantClient(path=self.url)
                 logger.info(f"Qdrant: connected with local persistence at {self.url}")
-        return self.client
+            QdrantAdapter._client_cache[cache_key] = client
+        return QdrantAdapter._client_cache[cache_key]
 
     # ── Embedding ───────────────────────────────────────────────────
 

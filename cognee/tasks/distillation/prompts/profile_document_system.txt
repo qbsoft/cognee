@@ -41,6 +41,10 @@ You are a document structure analyzer. Quickly identify the document's type, str
 8. **disambiguation_pairs** (array of strings): 文档中容易混淆的概念对/组。
    例如: ["质保期支持 vs 基础维保(MA)", "到货通知单 vs 验货申请单"]
 
+9. **negation_targets** (array of strings): 基于文档类型和内容，识别读者可能期望但文档中实际缺失的信息。
+   例如合同类文档：["付款里程碑百分比", "违约罚则", "争议解决条款"]（仅当这些确实不在文档中时）
+   只列出与文档领域相关且确实缺失的项目。
+
 【规则】
 - 只基于你看到的文档内容分析，不要猜测文档中不存在的内容
 - 保持简洁，每个字段只列关键信息

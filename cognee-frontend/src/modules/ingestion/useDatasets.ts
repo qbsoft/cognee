@@ -104,7 +104,7 @@ function useDatasets(useCloud = false) {
       .then((response) => response.json())
       .then((data) => {
         // Map backend snake_case to frontend camelCase and ensure datasetId is set
-        const mappedData = data.map((item: any) => ({
+        const mappedData = data.map((item: Record<string, unknown>) => ({
           ...item,
           datasetId: item.dataset_id || datasetId,  // Use backend field or fallback to param
         }));

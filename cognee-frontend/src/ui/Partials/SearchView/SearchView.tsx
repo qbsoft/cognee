@@ -4,7 +4,7 @@ import classNames from "classnames";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LoadingIndicator } from "@/ui/App";
-import { CTAButton, Select, TextArea, Input } from "@/ui/elements";
+import { TextArea, Input } from "@/ui/elements";
 import useChat from "@/modules/chat/hooks/useChat";
 
 import styles from "./SearchView.module.css";
@@ -105,16 +105,17 @@ export default function SearchView() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-500 p-6 pt-16 rounded-3xl border-indigo-600 border-2 shadow-xl">
-      <form onSubmit={handleChatMessageSubmit} ref={chatFormRef} className="flex flex-col gap-4 h-full">
-        <div className="h-full overflow-y-auto" id="messages">
-          <div className="flex flex-col gap-2 items-end justify-end min-h-full px-6 pb-4">
+    <div className="flex flex-col h-full bg-white rounded-2xl shadow-xl overflow-hidden">
+      <form onSubmit={handleChatMessageSubmit} ref={chatFormRef} className="flex flex-col h-full">
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto" id="messages">
+          <div className="flex flex-col gap-3 items-end justify-end min-h-full px-6 py-4">
             {messages.map((message) => (
               <p
                 key={message.id}
                 className={classNames({
-                  [classNames("ml-12 px-6 py-4 bg-gray-300 rounded-xl", styles.userMessage)]: message.user === "user",
-                  [classNames("text-gray-200", styles.systemMessage)]: message.user !== "user",
+                  [classNames("ml-12 px-4 py-3 bg-indigo-50 text-gray-800 rounded-xl text-sm", styles.userMessage)]: message.user === "user",
+                  [classNames("w-full px-4 py-3 text-gray-700 text-sm leading-relaxed", styles.systemMessage)]: message.user !== "user",
                 })}
               >
                 {message?.text && (
@@ -125,7 +126,8 @@ export default function SearchView() {
           </div>
         </div>
 
-        <div className="p-4 bg-gray-300 rounded-xl flex flex-col gap-2">
+        {/* Input area */}
+        <div className="border-t border-gray-100 p-4 bg-gray-50 flex flex-col gap-3">
           <TextArea
             value={searchInputValue}
             onChange={handleSearchInputChange}
@@ -134,22 +136,27 @@ export default function SearchView() {
             name="chatInput"
             placeholder="Ask anything"
             contentEditable={true}
-            className="resize-none min-h-14 max-h-96 overflow-y-auto"
+            className="resize-none min-h-12 max-h-48 overflow-y-auto bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
           />
           <div className="flex flex-row items-center justify-between gap-4">
-            <div className="flex flex-row items-center gap-4">
+            <div className="flex flex-row items-center gap-4 flex-wrap">
               <div className="flex flex-row items-center gap-2">
-                <label className="text-gray-600 whitespace-nowrap">Search type:</label>
-                <Select name="searchType" defaultValue={searchOptions[0].value} className="max-w-2xs">
-                  {searchOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </Select>
+                <label className="text-xs text-gray-500 whitespace-nowrap">Search type:</label>
+                <div className="relative">
+                  <select name="searchType" defaultValue={searchOptions[0].value} className="appearance-none pl-3 pr-8 h-8 text-xs rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer">
+                    {searchOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
               <div className="flex flex-row items-center gap-2">
-                <label className="text-gray-600 whitespace-nowrap" title="Controls how many results to return. Smaller = focused, larger = broader graph exploration.">
-                  Max results:
-                </label>
+                <label className="text-xs text-gray-500 whitespace-nowrap">Max results:</label>
                 <Input
                   type="number"
                   name="topK"
@@ -157,15 +164,19 @@ export default function SearchView() {
                   max={100}
                   value={topK}
                   onChange={handleTopKChange}
-                  className="w-20"
-                  title="Controls how many results to return. Smaller = focused, larger = broader graph exploration."
+                  className="w-16 text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  title="Controls how many results to return."
                 />
               </div>
             </div>
-            <CTAButton disabled={isSearchRunning} type="submit">
-              {isSearchRunning? "Searching..." : "Search"}
+            <button
+              disabled={isSearchRunning}
+              type="submit"
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+            >
               {isSearchRunning && <LoadingIndicator />}
-            </CTAButton>
+              {isSearchRunning ? "Searching..." : "Search"}
+            </button>
           </div>
         </div>
       </form>

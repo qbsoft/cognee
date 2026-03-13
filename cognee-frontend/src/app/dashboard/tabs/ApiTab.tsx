@@ -91,13 +91,13 @@ export default function ApiTab() {
   useEffect(() => {
     const checkServices = async () => {
       try {
-        await apiFetch.checkHealth();
+        await apiFetch("/v1/health");
         setBackendUp(true);
       } catch {
         setBackendUp(false);
       }
       try {
-        await apiFetch.checkMCPHealth();
+        await apiFetch("/v1/mcp/health");
         setMcpUp(true);
       } catch {
         setMcpUp(false);
@@ -122,7 +122,8 @@ export default function ApiTab() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto py-6 px-4 space-y-8">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-4xl mx-auto py-6 px-4 space-y-8">
       {/* Connection Status */}
       <section>
         <h2 className="text-lg font-semibold text-gray-800 mb-3">{t("dashboard.api.serviceStatus")}</h2>
@@ -225,6 +226,7 @@ export default function ApiTab() {
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 }

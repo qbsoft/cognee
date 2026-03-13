@@ -27,7 +27,6 @@ from cognee.shared.logging_utils import get_logger
 from cognee.infrastructure.databases.vector.embeddings.EmbeddingEngine import EmbeddingEngine
 from cognee.infrastructure.databases.exceptions import EmbeddingException
 from cognee.infrastructure.llm.tokenizer.TikToken import TikTokenTokenizer
-from cognee.infrastructure.llm.tokenizer.HuggingFace import HuggingFaceTokenizer
 
 logger = get_logger("OpenAICompatibleEmbeddingEngine")
 
@@ -66,8 +65,13 @@ class OpenAICompatibleEmbeddingEngine(EmbeddingEngine):
             client_kwargs["base_url"] = self.endpoint
         self._client = AsyncOpenAI(**client_kwargs)
 
-        # Tokenizer (best-effort: TikToken for OpenAI-style, fallback for others)
-        self.tokenizer = self._load_tokenizer()
+        # Use cl100k_base for token counting (chunk sizing).
+        # Accurate per-model tokenization is unnecessary here —
+        # any reasonable estimate keeps chunks within limits.
+        self.tokenizer = TikTokenTokenizer(
+            model=None,
+            max_completion_tokens=self.max_completion_tokens,
+        )
 
         # Mock mode
         enable_mocking = os.getenv("MOCK_EMBEDDING", "false")
@@ -160,26 +164,3 @@ class OpenAICompatibleEmbeddingEngine(EmbeddingEngine):
             return [pooled.tolist()]
 
         raise original_error
-
-    def _load_tokenizer(self):
-        """Best-effort tokenizer selection."""
-        model_short = self.model.split("/")[-1]
-        try:
-            return TikTokenTokenizer(
-                model=model_short,
-                max_completion_tokens=self.max_completion_tokens,
-            )
-        except Exception:
-            pass
-        try:
-            return HuggingFaceTokenizer(
-                model=self.model,
-                max_completion_tokens=self.max_completion_tokens,
-            )
-        except Exception:
-            pass
-        # Ultimate fallback – TikToken with default encoding
-        return TikTokenTokenizer(
-            model=None,
-            max_completion_tokens=self.max_completion_tokens,
-        )

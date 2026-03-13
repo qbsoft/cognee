@@ -82,7 +82,7 @@ export default function Dashboard({ accessToken }: DashboardProps) {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-hidden">{renderActiveTab()}</div>
+      <div className="flex-1 overflow-hidden flex flex-col">{renderActiveTab()}</div>
     </div>
   );
 }

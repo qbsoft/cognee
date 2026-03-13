@@ -20,6 +20,7 @@ interface GraphVisuzaliationProps {
   data?: GraphData<NodeObject, LinkObject>;
   graphControls: MutableRefObject<GraphControlsAPI>;
   className?: string;
+  highlightedNodeIds?: Set<string | number>;
 }
 
 export interface GraphVisualizationAPI {
@@ -27,10 +28,16 @@ export interface GraphVisualizationAPI {
   setGraphShape: (shape: string) => void;
 }
 
-export default function GraphVisualization({ ref, data, graphControls, className }: GraphVisuzaliationProps) {
+export default function GraphVisualization({ ref, data, graphControls, className, highlightedNodeIds }: GraphVisuzaliationProps) {
   const textSize = 6;
   const nodeSize = 15;
   // const addNodeDistanceFromSourceNode = 15;
+
+  // Track highlighted IDs via ref to avoid stale closures in ForceGraph callbacks
+  const highlightedIdsRef = useRef<Set<string | number>>(new Set());
+  useEffect(() => {
+    highlightedIdsRef.current = highlightedNodeIds ?? new Set();
+  }, [highlightedNodeIds]);
 
   // State for tracking container dimensions
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -128,6 +135,19 @@ export default function GraphVisualization({ ref, data, graphControls, className
     // }
 
     if (renderType === "replace") {
+      // Glow ring for highlighted nodes
+      if (highlightedIdsRef.current.has(node.id as string | number)) {
+        ctx.save();
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = "#6366f1";
+        ctx.strokeStyle = "#6366f1";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(node.x!, node.y!, nodeSize + 4, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       ctx.beginPath();
       ctx.fillStyle = getColorForNodeType(node.type);
       ctx.arc(node.x!, node.y!, nodeSize, 0, 2 * Math.PI);

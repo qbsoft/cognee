@@ -953,4 +953,44 @@ def get_datasets_router() -> APIRouter:
                 detail=f"Error reprocessing dataset files: {str(error)}"
             ) from error
 
+    class RenameDatasetRequest(BaseModel):
+        name: str
+
+    @router.patch("/{dataset_id}", response_model=DatasetDTO)
+    async def rename_dataset(
+        dataset_id: UUID,
+        body: RenameDatasetRequest,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Rename a dataset. User must have write permission."""
+        send_telemetry(
+            "Datasets API Endpoint Invoked",
+            user.id,
+            additional_properties={
+                "endpoint": f"PATCH /v1/datasets/{str(dataset_id)}",
+                "dataset_id": str(dataset_id),
+                "cognee_version": cognee_version,
+            },
+        )
+
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Dataset name cannot be empty")
+
+        dataset_list = await get_authorized_existing_datasets([dataset_id], "write", user)
+        if not dataset_list:
+            raise HTTPException(status_code=404, detail=f"Dataset ({dataset_id}) not found or no write permission")
+
+        db_engine = get_relational_engine()
+        async with db_engine.get_async_session() as session:
+            from cognee.modules.data.models import Dataset as DatasetModel
+            dataset_obj = await session.get(DatasetModel, dataset_id)
+            if dataset_obj is None:
+                raise HTTPException(status_code=404, detail=f"Dataset ({dataset_id}) not found")
+            dataset_obj.name = name
+            session.add(dataset_obj)
+            await session.commit()
+            await session.refresh(dataset_obj)
+            return dataset_obj
+
     return router

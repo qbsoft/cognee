@@ -23,9 +23,16 @@ search:
   # Automatically skipped for small datasets (≤ min_doc_count)
   document_routing:
     enabled: true
-    min_doc_count: 10000     # Effectively disabled: skip routing for all datasets
+    min_doc_count: 5          # Enable routing for datasets with >5 documents
     top_k: 3                 # Max documents to select in Stage 1
+    llm_candidate_limit: 10  # Only send top-N vector matches to LLM router (reduces noise)
     confidence_threshold: 0.3 # Activate routing if best card score < this
-    score_gap: 0.15          # Only include docs within this distance of best match
-    kd_routing_boost: 0.5    # Score bonus for KD from routed documents (higher = stronger preference)
-    consistency_bonus: 0.25   # Bonus per sibling KD from same document in pool (higher = more doc-focused)
+    score_gap: 0.10          # Only include docs within this distance of best match (tighter = more single-doc)
+    kd_routing_boost: 0.8    # Score bonus for KD from routed documents (higher = stronger preference)
+    consistency_bonus: 0.40   # Bonus per sibling KD from same document in pool (higher = more doc-focused)
+
+  # Post-generation claim verification: checks answer against context
+  # Catches hallucinated numbers/facts that prompt rules missed
+  verification:
+    enabled: true
+    max_retries: 1            # Max re-generation attempts if ungrounded claims found

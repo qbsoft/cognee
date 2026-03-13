@@ -118,10 +118,13 @@ export default function AddDataToCognee({ datasets, refreshDatasets, getDatasetD
           {ctaLabel}
         </button>
       ) : (
-        <GhostButton onClick={openAddDataModal} className="mb-5 py-1.5 !px-2 text-sm w-full items-center justify-start">
-          <PlusIcon />
+        <button
+          onClick={openAddDataModal}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-medium rounded-lg transition-colors shadow-sm whitespace-nowrap"
+        >
+          <PlusIcon color="white" />
           {t("navigation.addData")}
-        </GhostButton>
+        </button>
       )}
 
       <Modal isOpen={isAddDataModalOpen}>

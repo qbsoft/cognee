@@ -9,6 +9,7 @@ from cognee.modules.graph.utils import resolve_edges_to_text
 from cognee.modules.graph.utils.convert_node_to_data_point import get_all_subclasses
 from cognee.modules.retrieval.base_graph_retriever import BaseGraphRetriever
 from cognee.modules.retrieval.utils.brute_force_triplet_search import brute_force_triplet_search
+from cognee.infrastructure.llm.LLMGateway import LLMGateway
 from cognee.modules.retrieval.utils.completion import generate_completion, summarize_text
 from cognee.modules.retrieval.utils.session_cache import (
     save_conversation_history,
@@ -473,7 +474,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 query,
                 doc_names=kd_doc_filter,
                 large_dataset=True,
-                scope_max_candidates=15,
+                scope_max_candidates=20,
             )
         else:
             kd_edges = await self._search_knowledge_distillation(
@@ -560,8 +561,8 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             # DC chunks are the most reliable source of truth.
             is_scoped = self.document_scope is not None
             search_limit = 30 if is_scoped else 10
-            score_threshold = 1.0 if is_scoped else 0.7
-            top_n = 8 if is_scoped else 2
+            score_threshold = 1.0 if is_scoped else 0.5  # Tightened for better DC quality (was 0.7)
+            top_n = 12 if is_scoped else 2
 
             # Pre-fetch chunk IDs for the scoped document (if any)
             scoped_chunk_ids = None
@@ -679,10 +680,10 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 distance_threshold = 2.0
             elif large_dataset:
                 search_limit = 200
-                distance_threshold = 0.8
+                distance_threshold = 0.6  # Tightened for better precision in routed scenarios
             else:
                 search_limit = 30
-                distance_threshold = 0.8
+                distance_threshold = 0.6  # Tightened for better precision (was 0.8)
             results = await vector_engine.search(
                 "KnowledgeDistillation_text", query, limit=search_limit,
             )
@@ -749,7 +750,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
             # Sort candidates (lower score = better for all paths)
             candidates.sort(key=lambda x: x[0])
-            max_candidates = scope_max_candidates if scope_max_candidates else (8 if large_dataset else 5)
+            max_candidates = scope_max_candidates if scope_max_candidates else 8  # Always 8 candidates for better coverage
             candidates = candidates[:max_candidates]
 
             edges = []
@@ -1167,6 +1168,108 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             logger.warning("Neighbor expansion failed (non-fatal): %s", e)
             return []
 
+    # ---- Phase D: Post-generation claim verification ----
+
+    def _verification_enabled(self) -> bool:
+        """Check if post-generation claim verification is enabled in search.yaml."""
+        try:
+            from cognee.infrastructure.config.yaml_config import get_module_config
+            search_cfg = get_module_config("search")
+            verification = search_cfg.get("search", {}).get("verification", {})
+            return verification.get("enabled", False)
+        except Exception:
+            return False
+
+    def _get_verification_max_retries(self) -> int:
+        """Get the maximum number of re-generation retries."""
+        try:
+            from cognee.infrastructure.config.yaml_config import get_module_config
+            search_cfg = get_module_config("search")
+            verification = search_cfg.get("search", {}).get("verification", {})
+            return verification.get("max_retries", 1)
+        except Exception:
+            return 1
+
+    async def _verify_claims(self, answer: str, context: str) -> list:
+        """Verify factual claims in the answer against the context.
+
+        Extracts numeric values, counts, percentages, and specific facts
+        from the answer, then checks if each has grounding in the context.
+
+        Returns a list of ungrounded claim strings. Empty list = all good.
+        """
+        verify_prompt = (
+            "你是一个事实核查器。请检查以下【回答】中的每一个数值声明（数字、百分比、数量、"
+            "日期、版本号、具体列表项数量）是否在【上下文】中有明确依据。\n\n"
+            "【上下文】\n" + context[:8000] + "\n\n"  # Limit context to avoid token overflow
+            "【回答】\n" + answer + "\n\n"
+            "请输出一个JSON数组，包含所有在上下文中找不到明确依据的声明。\n"
+            "每个元素是一个字符串，描述该不可靠声明（如\"回答中说付款比例为30%，但上下文未提及此数字\"）。\n"
+            "如果所有声明都有依据，返回空数组 []。\n"
+            "只输出JSON数组，不要添加任何解释。"
+        )
+        try:
+            result = await LLMGateway.acreate_structured_output(
+                text_input=verify_prompt,
+                system_prompt="你是一个严格的事实核查器，只输出JSON数组。",
+                response_model=str,
+                task_type="extraction",  # Use fast model for verification
+            )
+            # Parse the result — it should be a JSON array
+            import json
+            result_str = result.strip()
+            # Handle markdown code blocks
+            if result_str.startswith("```"):
+                result_str = result_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            claims = json.loads(result_str)
+            if isinstance(claims, list) and len(claims) > 0:
+                logger.warning("Claim verification found %d ungrounded claims: %s",
+                              len(claims), claims)
+                return claims
+            return []
+        except Exception as e:
+            logger.debug("Claim verification failed (non-fatal): %s", e)
+            return []
+
+    async def _regenerate_with_correction(
+        self,
+        query: str,
+        context: str,
+        original_answer: str,
+        ungrounded_claims: list,
+        conversation_history: Optional[str] = None,
+    ) -> str:
+        """Regenerate the answer with explicit correction instructions.
+
+        Tells the LLM which claims were ungrounded and asks it to regenerate
+        without those fabricated facts.
+        """
+        claims_text = "\n".join(f"- {c}" for c in ungrounded_claims)
+        correction_context = (
+            f"【重要纠正指令】\n"
+            f"你之前的回答包含了以下无法在上下文中找到依据的声明：\n{claims_text}\n\n"
+            f"请重新回答以下问题，严格只基于上下文中的信息，不要包含任何无依据的数字、"
+            f"百分比或具体数据。如果上下文中确实没有某项数据，请明确说明\"文档未规定/未提及\"。\n\n"
+            f"【上下文】\n{context}\n\n"
+            f"【问题】\n{query}"
+        )
+        try:
+            from cognee.infrastructure.llm.prompts import read_query_prompt
+            system_prompt = read_query_prompt(self.system_prompt_path)
+            if conversation_history:
+                system_prompt = conversation_history + "\nTASK:" + system_prompt
+
+            result = await LLMGateway.acreate_structured_output(
+                text_input=correction_context,
+                system_prompt=system_prompt,
+                response_model=str,
+            )
+            logger.info("Claim verification: regenerated answer after finding ungrounded claims")
+            return result
+        except Exception as e:
+            logger.warning("Claim correction regeneration failed, using original: %s", e)
+            return original_answer
+
     async def get_completion(
         self,
         query: str,
@@ -1288,6 +1391,22 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 system_prompt_path=self.system_prompt_path,
                 system_prompt=self.system_prompt,
             )
+
+        # Phase D: Post-generation claim verification
+        if self._verification_enabled() and completion:
+            max_retries = self._get_verification_max_retries()
+            for attempt in range(max_retries):
+                ungrounded = await self._verify_claims(completion, context_text)
+                if not ungrounded:
+                    break
+                logger.info(
+                    "Claim verification attempt %d: found %d ungrounded claims, regenerating",
+                    attempt + 1, len(ungrounded),
+                )
+                completion = await self._regenerate_with_correction(
+                    query, context_text, completion, ungrounded,
+                    conversation_history if session_save else None,
+                )
 
         if self.save_interaction and context and triplets and completion:
             await self.save_qa(

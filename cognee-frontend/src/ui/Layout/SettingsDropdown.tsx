@@ -49,6 +49,13 @@ export default function SettingsDropdown({ user }: SettingsDropdownProps) {
           >
             {"\u6a21\u578b\u914d\u7f6e"}
           </Link>
+          <Link
+            href="/settings/sharing"
+            className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            onClick={close}
+          >
+            {"\u5171\u4eab\u7ec4\u7ba1\u7406"}
+          </Link>
           {shouldShowPermissions && permissionsLink && (
             <Link
               href={permissionsLink}

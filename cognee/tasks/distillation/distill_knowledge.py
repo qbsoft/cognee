@@ -172,6 +172,7 @@ class DocumentProfile(BaseModel):
     example_questions: List[str] = Field(default_factory=list, description="Likely reader questions")
     qa_coverage_areas: List[str] = Field(default_factory=list, description="Domain-specific QA coverage areas")
     disambiguation_pairs: List[str] = Field(default_factory=list, description="Confusable concept pairs")
+    negation_targets: List[str] = Field(default_factory=list, description="Expected but missing info")
 
 
 async def distill_knowledge(
@@ -463,6 +464,7 @@ def _build_profile_context(profile: DocumentProfile) -> dict:
         "example_questions": profile.example_questions,
         "qa_coverage_areas": profile.qa_coverage_areas,
         "disambiguation_pairs": profile.disambiguation_pairs,
+        "negation_targets": profile.negation_targets,
     }
 
 
