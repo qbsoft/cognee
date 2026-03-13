@@ -100,8 +100,8 @@ async def _llm_select_documents(query: str, card_results: list) -> set:
             name = _extract_doc_name_from_card(card)
             text = card.payload.get("text", "")
             if name and text:
-                # Include full card text (truncated to ~300 chars)
-                card_summary = text.strip()[:300]
+                # Include full card text (truncated to ~500 chars for better context)
+                card_summary = text.strip()[:500]
                 doc_entries.append(f"[{i+1}] {card_summary}")
             elif name:
                 doc_entries.append(f"[{i+1}] {name}")
@@ -113,23 +113,24 @@ async def _llm_select_documents(query: str, card_results: list) -> set:
 
         prompt = (
             f"用户查询: {query}\n\n"
-            f"以下是数据库中所有{len(doc_entries)}个文档的摘要:\n\n"
+            f"以下是与该查询最相关的{len(doc_entries)}个候选文档摘要:\n\n"
             f"{docs_text}\n\n"
-            "请判断用户最可能在询问哪个文档的内容。\n\n"
+            "请选出最可能包含答案的1-3个文档。\n\n"
             "判断规则:\n"
-            "1. 如果查询提到了具体文档名称或独特关键词，直接匹配\n"
+            "1. 如果查询提到了具体文档名称或独特关键词，直接匹配该文档\n"
             '2. 如果查询使用"本项目"/"本系统"/"该项目"等泛指，通常指'
             "项目的核心定义文档。文档类型优先级:\n"
             "   - SOW/工作说明书/技术规范书 -> 项目核心定义(最高优先)\n"
             "   - 合同/协议书 -> 项目法律条款\n"
             "   - 用户手册/操作指南 -> 系统操作步骤\n"
-            '   - 项目计划书 -> 子项目或关联项目(通常不是用户所指的"本项目")\n'
-            '3. 如果查询关于系统操作步骤(如"如何填写""操作流程")，'
-            "优先匹配用户手册/操作指南类文档\n"
-            "4. 如果查询关于合同条款、付款条件、验收标准等商务内容，"
-            "优先匹配SOW/合同类文档\n\n"
-            "只输出最相关文档的编号(如: 1)。如果有2个同样相关，"
-            "输出两个(如: 1,3)。只输出数字，不要解释。"
+            '   - 项目计划书 -> 子项目/关联项目(通常不是"本项目")\n'
+            '3. 如果查询关于操作步骤(如"如何填写""操作流程")，'
+            "优先匹配用户手册类文档\n"
+            "4. 如果查询关于合同条款、验收标准等商务内容，"
+            "优先匹配SOW/合同类文档\n"
+            "5. 如果不确定，可以选择多个文档（最多3个）\n\n"
+            "输出最相关文档的编号，用逗号分隔(如: 1 或 1,3)。"
+            "只输出数字，不要解释。"
         )
 
         # Use the STRONG model (answer_model) for better routing accuracy.
@@ -390,9 +391,22 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
                 if _should_enable_routing(doc_count):
                     large_dataset = True
+                    # Pre-filter: only send top N candidates to LLM
+                    # (sorted by vector similarity, higher score = more
+                    # relevant).  This dramatically improves LLM routing
+                    # accuracy by reducing noise from 50+ documents.
+                    routing_cfg = _get_routing_config()
+                    llm_candidate_limit = routing_cfg.get(
+                        "llm_candidate_limit", 10
+                    )
+                    llm_candidates = card_results[:llm_candidate_limit]
+                    logger.info(
+                        "Routing: %d total docs, sending top %d to LLM",
+                        doc_count, len(llm_candidates),
+                    )
                     # Use STRONG model for document selection
                     routed_doc_names = await _llm_select_documents(
-                        query, card_results,
+                        query, llm_candidates,
                     )
                     if routed_doc_names:
                         logger.info(
@@ -459,7 +473,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 query,
                 doc_names=kd_doc_filter,
                 large_dataset=True,
-                scope_max_candidates=10,
+                scope_max_candidates=15,
             )
         else:
             kd_edges = await self._search_knowledge_distillation(
@@ -473,9 +487,10 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             )
 
         # Supplement with DocumentChunk direct vector search as safety net.
-        # IMPORTANT: When large dataset detected, skip DC search to avoid
-        # noise pollution — DC payload has no doc_name field for filtering.
-        if not large_dataset:
+        # When document_scope is explicit, ALWAYS include DC search — KD
+        # may miss basic facts (e.g., party names) that DC chunks contain.
+        # When large_dataset + no scope, skip DC to avoid noise pollution.
+        if self.document_scope or not large_dataset:
             dc_edges = await self._search_document_chunks(query)
             if dc_edges:
                 triplets = list(triplets) + dc_edges
@@ -501,6 +516,27 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
         return triplets
 
+    async def _get_scoped_chunk_ids(self, doc_name: str) -> set:
+        """Get chunk IDs belonging to a specific document from Neo4j."""
+        try:
+            graph_engine = await get_graph_engine()
+            query = (
+                "MATCH (dc:DocumentChunk)-[:部分属于]->(td:TextDocument) "
+                "WHERE td.name = $doc_name "
+                "RETURN dc.id as chunk_id"
+            )
+            records = await graph_engine.query(query, {"doc_name": doc_name})
+            chunk_ids = set()
+            for r in records:
+                cid = r.get("chunk_id") or (r[0] if isinstance(r, (list, tuple)) else None)
+                if cid:
+                    chunk_ids.add(str(cid))
+            logger.info("Document scope '%s': found %d chunk IDs", doc_name, len(chunk_ids))
+            return chunk_ids
+        except Exception as e:
+            logger.warning("Failed to get scoped chunk IDs: %s", e)
+            return set()
+
     async def _search_document_chunks(self, query: str, doc_names=None) -> List[Edge]:
         """
         Direct vector search on DocumentChunk_text collection as safety net.
@@ -513,12 +549,30 @@ class GraphCompletionRetriever(BaseGraphRetriever):
         Results are wrapped as synthetic Edge objects with _DC_EDGE_MARKER
         so get_completion() can format them as a separate "原文参考段落" section.
 
+        When document_scope is active, only chunks belonging to the target
+        document are kept (filtered by Neo4j chunk-document mapping).
+
         MUST be called within the dataset database context (ContextVar set).
         """
         try:
             vector_engine = get_vector_engine()
+            # When document_scope is active, search more aggressively since
+            # DC chunks are the most reliable source of truth.
+            is_scoped = self.document_scope is not None
+            search_limit = 30 if is_scoped else 10
+            score_threshold = 1.0 if is_scoped else 0.7
+            top_n = 8 if is_scoped else 2
+
+            # Pre-fetch chunk IDs for the scoped document (if any)
+            scoped_chunk_ids = None
+            if is_scoped:
+                scoped_chunk_ids = await self._get_scoped_chunk_ids(self.document_scope)
+                if not scoped_chunk_ids:
+                    logger.warning("No chunk IDs found for document '%s', DC search will be unfiltered", self.document_scope)
+                    scoped_chunk_ids = None  # Fall back to unfiltered
+
             results = await vector_engine.search(
-                "DocumentChunk_text", query, limit=10,
+                "DocumentChunk_text", query, limit=search_limit,
             )
             if not results:
                 return []
@@ -533,9 +587,13 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             query_keywords |= set(re.findall(r'\d+', query))
 
             candidates = []
+            filtered_count = 0
             for result in results:
-                # Use a generous threshold — DC is a fallback safety net
-                if result.score > 0.7:
+                if result.score > score_threshold:
+                    continue
+                # Filter by document scope: only keep chunks from target document
+                if scoped_chunk_ids is not None and str(result.id) not in scoped_chunk_ids:
+                    filtered_count += 1
                     continue
                 text = result.payload.get("text", "")
                 if not text or len(text.strip()) < 30:
@@ -545,11 +603,11 @@ class GraphCompletionRetriever(BaseGraphRetriever):
                 boosted_score = result.score - (hits * 0.1)
                 candidates.append((boosted_score, result.score, text))
 
+            if filtered_count > 0:
+                logger.info("DC scope filter: removed %d chunks from other documents", filtered_count)
+
             candidates.sort(key=lambda x: x[0])
-            # Keep top 2 chunks — enough for fallback without overwhelming context.
-            # Using 2 instead of 3 reduces noise that can confuse the LLM when
-            # KD already has the answer (e.g., counts/totals not repeated in raw text).
-            candidates = candidates[:2]
+            candidates = candidates[:top_n]
 
             edges = []
             for i, (boosted, orig_score, text) in enumerate(candidates):
@@ -613,8 +671,18 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             # E.g., "服务范围" is semantically closer to 50 noise docs' "服务范围"
             # Q&A pairs than to the SOW's specific implementation details.
             is_scoped = scope_max_candidates is not None
-            search_limit = 3000 if is_scoped else 30
-            distance_threshold = 2.0 if is_scoped else 0.8
+            # When routing is active (large_dataset), search more candidates
+            # to ensure correct doc's KDs are in the pool even if router
+            # selected wrong docs.  Scoped searches always use 3000.
+            if is_scoped:
+                search_limit = 3000
+                distance_threshold = 2.0
+            elif large_dataset:
+                search_limit = 200
+                distance_threshold = 0.8
+            else:
+                search_limit = 30
+                distance_threshold = 0.8
             results = await vector_engine.search(
                 "KnowledgeDistillation_text", query, limit=search_limit,
             )
@@ -635,41 +703,44 @@ class GraphCompletionRetriever(BaseGraphRetriever):
             if not filtered:
                 return []
 
-            # === Document filter: when routing selected docs ===
-            # Supports both exact match ([来源: name]) and substring match
-            # (e.g. document_scope="正和热电" matches [来源: 正和热电采购系统SOW])
-            if doc_names:
+            # === Document filter/boost: when routing selected docs ===
+            # For document_scope (is_scoped): HARD filter — only return
+            # the scoped document's KD entries.
+            # For routing (large_dataset, not scoped): SOFT boost — tag
+            # each entry with whether it matches routed docs, used for
+            # scoring later.  This prevents wrong-doc routing from
+            # completely losing the correct document's KD entries.
+            def _kd_matches_doc(text, names):
+                for name in names:
+                    if f"[来源: {name}]" in text:
+                        return True
+                    src_match = re.search(r'\[来源:\s*([^\]]+)\]', text)
+                    if src_match and name in src_match.group(1):
+                        return True
+                return False
+
+            if doc_names and is_scoped:
+                # Hard filter for explicit document_scope
                 before_count = len(filtered)
-                def _kd_matches_doc(text, names):
-                    for name in names:
-                        if f"[来源: {name}]" in text:
-                            return True
-                        # Substring match: check if scope keyword appears
-                        # in the source tag
-                        src_match = re.search(r'\[来源:\s*([^\]]+)\]', text)
-                        if src_match and name in src_match.group(1):
-                            return True
-                    return False
                 filtered = [
                     (s, t) for s, t in filtered
                     if _kd_matches_doc(t, doc_names)
                 ]
                 logger.info(
-                    "KD doc filter: %d → %d (docs: %s)",
+                    "KD doc HARD filter (scoped): %d → %d (docs: %s)",
                     before_count, len(filtered), doc_names,
                 )
-                if not filtered and not is_scoped:
-                    # Hard filter yielded nothing — fall back to unfiltered
-                    # (but NOT when scoped — scope should return empty, not noise)
-                    logger.warning(
-                        "KD doc filter yielded 0 results, falling back to "
-                        "unfiltered pool"
-                    )
-                    filtered = [
-                        (r.score, r.payload.get("text", ""))
-                        for r in results
-                        if r.score <= 0.8 and r.payload.get("text", "")
-                    ]
+            elif doc_names and large_dataset:
+                # Soft boost for routing — tag entries but keep all
+                # The boost is applied in _rank_kd_by_keywords via
+                # routing_cfg['kd_routing_boost']
+                routed_count = sum(
+                    1 for _, t in filtered if _kd_matches_doc(t, doc_names)
+                )
+                logger.info(
+                    "KD doc SOFT boost (routing): %d total, %d from routed docs %s",
+                    len(filtered), routed_count, doc_names,
+                )
 
             # === Ranking: keyword-based scoring ===
             candidates = self._rank_kd_by_keywords(
@@ -678,7 +749,7 @@ class GraphCompletionRetriever(BaseGraphRetriever):
 
             # Sort candidates (lower score = better for all paths)
             candidates.sort(key=lambda x: x[0])
-            max_candidates = scope_max_candidates if scope_max_candidates else 5
+            max_candidates = scope_max_candidates if scope_max_candidates else (8 if large_dataset else 5)
             candidates = candidates[:max_candidates]
 
             edges = []

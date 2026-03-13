@@ -4,11 +4,12 @@
 concurrency:
   # LLM 并发: extract_graph_from_data 和 summarize_text 同时最多几个 LLM 请求
   # 推荐值: DashScope/Qwen API → 12, OpenAI → 20, 本地模型 → 根据GPU调整
-  max_concurrent_llm_calls: 12
+  # 注意: 使用系统代理(Clash/7897)时需降低，否则代理连接数被打满 → ConnectTimeout
+  max_concurrent_llm_calls: 1
 
   # 文档批次大小: cognify 时每批并行处理几个文档
   # 较大值→更快但占用更多内存, 较小值→更慢但更稳定
-  data_per_batch: 20
+  data_per_batch: 1
 
   # 知识蒸馏并发: distill_knowledge 同时最多几个文档并发蒸馏
   # 推荐值: DashScope → 8, OpenAI → 12
@@ -16,5 +17,5 @@ concurrency:
 
   # 向量写入并发: index_data_points 同时最多几个 embedding 批次并发执行
   # 集合级锁已防止同一集合并发写入，不同集合可以并发 → 可以适当提高此值
-  # 推荐值: DashScope Embedding API → 10, OpenAI → 20
-  max_concurrent_vector_tasks: 10
+  # 注意: 使用Clash代理时设为1，否则代理连接数被打满
+  max_concurrent_vector_tasks: 4
